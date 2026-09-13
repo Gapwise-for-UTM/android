@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -96,6 +97,7 @@ private val BuildingPoints = listOf(
     BuildingPoint("DW", "Erindale Studio Theatre", 43.5499078, -79.6661378),
 ).associateBy { it.code }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     meetings: List<Meeting>,
@@ -140,7 +142,7 @@ fun MapScreen(
                             fontSize = 20.sp,
                             lineHeight = 23.sp,
                             fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-0.6).sp,
+                            letterSpacing = (-0.6f).sp,
                         )
                         Text(
                             text = "${dayMeetings.size} ${if (dayMeetings.size == 1) "class" else "classes"} · time-labelled map",
@@ -152,9 +154,14 @@ fun MapScreen(
                     }
                     OutlinedButton(
                         onClick = { optionsOpen = true },
+                        modifier = Modifier.heightIn(min = 44.dp),
                         shape = RoundedCornerShape(8.dp),
                     ) {
-                        Icon(imageVector = Icons.Outlined.Tune, contentDescription = null)
+                        Icon(
+                            imageVector = Icons.Outlined.Tune,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
                         Text("Options", modifier = Modifier.padding(start = 6.dp), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
@@ -441,7 +448,6 @@ private fun UtmMap(
                     false
                 }
                 map.setStyle(styleUrl) {
-                    val scheduledCodes = destinations.mapNotNull { it.buildingCode }.toSet()
                     BuildingPoints.values.forEach { point ->
                         val classTimes = destinations
                             .filter { it.buildingCode == point.code }
