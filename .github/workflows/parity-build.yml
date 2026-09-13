@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,4 +23,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: current
-      - run: gradle :app:assembleDebug --stacktrace
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build.log
+      - name: Report build diagnostics
+        if: ${{ failure() && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- parity-build-diagnostics -->'
+            echo 'Android parity build failed. Tail of Gradle output:'
+            echo
+            echo '```text'
+            tail -n 160 build.log
+            echo '```'
+          } > diagnostics.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostics.md
