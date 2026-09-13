@@ -37,10 +37,10 @@ jobs:
         run: |
           {
             echo '<!-- parity-build-diagnostics -->'
-            echo 'Android parity build failed. Tail of Gradle output:'
+            echo 'Android parity build failed. Kotlin/Gradle diagnostics:'
             echo
             echo '```text'
-            tail -n 160 build.log
+            grep -E '(^e:| error:|Unresolved reference|Cannot infer|No parameter with name|Type mismatch|Argument type mismatch|Compilation error)' build.log | tail -n 220 || true
             echo '```'
           } > diagnostics.md
           gh pr comment "$PR_NUMBER" --body-file diagnostics.md
