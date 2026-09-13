@@ -1,133 +1,168 @@
-<p align="center">
-  <img src="assets/gapwise-android.svg" width="220" alt="Gapwise for Android logo" />
-</p>
+<div align="center">
 
-<h1 align="center">Gapwise for Android</h1>
+<img src="assets/gapwise-android.svg" width="116" alt="Gapwise for Android logo" />
 
-<p align="center">
-  <strong>Make the time between classes count — natively on Android.</strong>
-</p>
+# Gapwise for Android
 
-<p align="center">
-  A native Kotlin + Jetpack Compose client for Gapwise, designed for the University of Toronto Mississauga and St. George campuses from day one.
-</p>
+### The native Android client for Gapwise.
 
-> [!IMPORTANT]
-> **Early development.** This repository is being built from the ground up as the native Android home for Gapwise. The architecture, timetable model, campus data, and map experience are being designed before the first public release.
+**A privacy-first Kotlin + Jetpack Compose app for understanding your timetable, the time between classes, and the rest of your day.**
 
-## What this repo is
+[![Android](https://img.shields.io/badge/Android-Native-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://developer.android.com/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-Native_UI-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
+[![MIT](https://img.shields.io/badge/License-MIT-111111?style=for-the-badge)](LICENSE)
 
-Gapwise for Android is a native Android application for understanding the day around a university timetable: what is next, where it is, how much usable time exists between classes, and where a student can realistically go before they need to leave.
+<sub>Kotlin · Jetpack Compose · Material 3 · MapLibre · Supabase · Android Keystore</sub>
 
-The Android app is not intended to be a wrapper around the web client. It is being designed specifically for Android with native navigation, interactions, haptics, offline-friendly data, and campus-aware maps.
+<br />
 
-The first supported campuses are:
+**[Gapwise](https://gapwise.ca)** · **[AI](https://ai.gapwise.ca)** · **[Data](https://data.gapwise.ca)** · **[Docs](https://docs.gapwise.ca)** · **[Status](https://status.gapwise.ca)**
 
-- **UTM — University of Toronto Mississauga**
-- **UTSG — University of Toronto St. George**
-
-The project remains proudly part of **Gapwise for UTM** while making the timetable and map experience useful to students across more of U of T.
-
-## First-release goals
-
-The initial Android release is focused on doing a small number of things exceptionally well:
-
-- Import a student's ACORN timetable.
-- Preserve campus identity for every course and meeting.
-- Render a polished native timetable with excellent day-to-day interactions.
-- Treat UTM and UTSG as first-class campuses rather than using one campus as a fallback for the other.
-- Resolve real campus locations such as `MN 1270` and `BA 1170` instead of incorrectly displaying them as `TBA`.
-- Open timetable locations directly on the correct campus map.
-- Provide a clear **Today / Timetable / Map** experience.
-- Keep core timetable calculations deterministic and available locally.
-
-## Campus-aware by design
-
-A short building code is not globally unique across U of T. Gapwise therefore treats campus as part of a location's identity.
-
-```kotlin
-CampusLocation(
-    campus = Campus.UTSG,
-    buildingCode = "BA",
-    room = "1170"
-)
-```
-
-This means a location is never interpreted against the wrong campus simply because two campuses happen to share a building code.
-
-For St. George in particular, the goal is full integration rather than merely preserving raw timetable text. A known UTSG room should resolve to its building, room, map position, and useful navigation context. `TBA` should mean that the source timetable actually has no confirmed location — not that Gapwise does not recognize the campus.
-
-## Planned technical foundation
-
-The Android client is being built around modern native Android tooling:
-
-- **Kotlin**
-- **Jetpack Compose**
-- **Material 3**, adapted to the Gapwise visual language
-- **Navigation Compose**
-- **Coroutines + StateFlow**
-- **Room** for structured local data where appropriate
-- **DataStore** for preferences
-- Native Android map integration with campus-specific data layers
-
-The codebase will be organized so timetable logic, campus data, UI, and platform services remain cleanly separated.
-
-```text
-app/
-core/
-  model/
-  campus/
-  database/
-  designsystem/
-  navigation/
-feature/
-  today/
-  timetable/
-  map/
-  settings/
-```
-
-## Product principles
-
-**Native, not transplanted.** Android should feel like Android while still unmistakably feeling like Gapwise.
-
-**Campus identity is explicit.** UTM and UTSG data must never be silently mixed or guessed across campuses.
-
-**Source data is preserved.** If ACORN provides a physical location, Gapwise should retain it even when richer map data is temporarily unavailable.
-
-**Privacy first.** Timetable data and deterministic schedule calculations should stay local whenever practical.
-
-**Correctness before cleverness.** Routing, time arithmetic, campus resolution, and timetable interpretation should be explainable and testable rather than delegated to a language model.
-
-## Development status
-
-The repository is currently in the **bootstrap and architecture phase**. The first implementation milestone is:
-
-```text
-native shell
-→ campus model
-→ timetable model
-→ ACORN import
-→ timetable UI
-→ UTM + UTSG building/location data
-→ campus maps
-→ timetable-to-map integration
-```
-
-## Related Gapwise projects
-
-- [Gapwise web app](https://github.com/Gapwise-for-UTM/gapwise)
-- [Gapwise mobile](https://github.com/Gapwise-for-UTM/gapwise-mobile)
-- [Gapwise data](https://github.com/Gapwise-for-UTM/gapwise-data)
-- [Gapwise documentation](https://github.com/Gapwise-for-UTM/gapwise-docs)
-
-## License
-
-MIT License. See [`LICENSE`](LICENSE).
+</div>
 
 ---
 
-<p align="center">
-  <strong>Gapwise for UTM</strong><br />
-  Privacy-first campus tools built at the University of Toronto.
-</p>
+## What Gapwise for Android is
+
+Gapwise for Android is the native Android client for **Gapwise**.
+
+It brings the core Gapwise experience to a phone-native interface: timetable import, Today, timetable views, gap planning, map tools, account continuity, encrypted sync, appearance settings, and privacy-first local storage.
+
+The app is built as a real Android application rather than a WebView wrapper. Navigation, storage, authentication, rendering, interactions, and platform integration are implemented with native Android technologies while staying aligned with the wider Gapwise product.
+
+---
+
+## Product direction
+
+The Android app is designed around a few principles:
+
+- **Fast to open and easy to understand.** The important parts of the day should be immediately visible.
+- **Native interaction.** Android navigation, gestures, system pickers, theming, and lifecycle behavior should feel natural on-device.
+- **Local-first timetable handling.** Imported calendar data is parsed on-device and the normalized timetable can remain available without repeated imports.
+- **Optional account continuity.** Users can keep using Gapwise without an account, while signed-in users can opt into encrypted sync.
+- **Deterministic planning.** Timetable arithmetic, gap boundaries, route timing, and other core calculations should remain explicit and testable.
+- **Visual consistency.** The app should remain recognizably Gapwise while adapting the experience to a native Android surface.
+
+---
+
+## Current app surface
+
+The native app currently includes:
+
+- **Today** for the current day's schedule and immediate context;
+- **Timetable** for imported ACORN calendar data;
+- **Gaps** for time-between-class planning;
+- **Map** for interactive location tools;
+- **More / Settings** for appearance, account, sync, timetable, routing, planning, privacy, exports, and integrations;
+- light and dark themes;
+- local encrypted timetable persistence;
+- optional encrypted Gapwise account sync;
+- Google, Microsoft, and GitHub sign-in through the existing Gapwise account system.
+
+The app is still under active development. Native behavior and visual parity with the web product will continue to improve over time.
+
+---
+
+## Architecture
+
+Gapwise for Android uses modern native Android tooling:
+
+- **Kotlin**
+- **Jetpack Compose**
+- **Material 3**
+- **Navigation Compose**
+- **Coroutines**
+- **MapLibre Native**
+- **Android Keystore**
+- **Supabase Auth + encrypted Gapwise sync**
+
+The project keeps domain logic, persistence, account/sync code, navigation, and feature UI separated so behavior can evolve without turning the app into one tightly coupled surface.
+
+```text
+app/src/main/java/ca/gapwise/android/
+├── core/
+│   ├── designsystem/
+│   ├── model/
+│   └── persistence/
+├── data/
+│   ├── account/
+│   ├── sync/
+│   └── timetable/
+├── feature/
+│   ├── today/
+│   ├── timetable/
+│   ├── gapplan/
+│   ├── map/
+│   └── settings/
+└── navigation/
+```
+
+---
+
+## Privacy and security
+
+The Android client is designed around data minimization and clear trust boundaries.
+
+Key properties include:
+
+- ACORN `.ics` files are parsed locally;
+- the original calendar file is not uploaded merely to build the timetable;
+- normalized timetable data can be stored in app-private encrypted storage;
+- local encryption uses Android Keystore-backed keys;
+- authentication session material is stored encrypted on-device;
+- account sync is optional;
+- private sync payloads are encrypted before cloud storage;
+- the app embeds only browser/client-safe public configuration, never privileged service credentials.
+
+Gapwise does not treat an account as a prerequisite for the core timetable experience.
+
+---
+
+## Local development
+
+Open the repository in Android Studio and use the Gradle wrapper with JDK 17.
+
+```bash
+git clone https://github.com/Gapwise-for-UTM/android.git
+cd android
+```
+
+The project currently targets modern Android SDKs and is intended to be tested with both an emulator and a physical device before release.
+
+For OAuth sign-in, the Gapwise Supabase project must allow the Android callback URI:
+
+```text
+gapwise://auth-callback
+```
+
+---
+
+## Gapwise ecosystem
+
+| Repository | Role | Primary surface |
+| --- | --- | --- |
+| **[`gapwise`](https://github.com/Gapwise-for-UTM/gapwise)** | Core web/PWA product and canonical Gapwise platform | [gapwise.ca](https://gapwise.ca) |
+| **[`android`](https://github.com/Gapwise-for-UTM/android)** | Native Android client | Android app |
+| **[`gapwise-ai`](https://github.com/Gapwise-for-UTM/gapwise-ai)** | Permissioned AI and MCP integration layer | [ai.gapwise.ca](https://ai.gapwise.ca) |
+| **[`gapwise-data`](https://github.com/Gapwise-for-UTM/gapwise-data)** | Open data, provenance, schema, and validation | [data.gapwise.ca](https://data.gapwise.ca) |
+| **[`gapwise-docs`](https://github.com/Gapwise-for-UTM/gapwise-docs)** | Canonical developer documentation | [docs.gapwise.ca](https://docs.gapwise.ca) |
+| **[`gapwise-status`](https://github.com/Gapwise-for-UTM/gapwise-status)** | Independent service-health monitoring and incident communication | [status.gapwise.ca](https://status.gapwise.ca) |
+
+---
+
+## Independent project
+
+> **Gapwise is an independent student software project created by Andrew Muratov. It is not affiliated with, endorsed by, or an official service of the University of Toronto.**
+
+## License
+
+Original project code and documentation are available under the [MIT License](LICENSE).
+
+<div align="center">
+
+**Built for the spaces between classes — now native on Android.**
+
+[Open Gapwise →](https://gapwise.ca)
+
+</div>
