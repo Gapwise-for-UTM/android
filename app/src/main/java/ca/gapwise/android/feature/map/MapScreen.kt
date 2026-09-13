@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -29,7 +30,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,10 +37,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +58,7 @@ import ca.gapwise.android.core.model.Campus
 import ca.gapwise.android.core.model.LocationType
 import ca.gapwise.android.core.model.Meeting
 import ca.gapwise.android.core.model.Term
+import ca.gapwise.android.feature.settings.RoutePreferencesSheet
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.IconFactory
 import org.maplibre.android.annotations.MarkerOptions
@@ -66,9 +67,18 @@ import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.FillExtrusionLayer
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.PropertyFactory.fillColor
+import org.maplibre.android.style.layers.PropertyFactory.fillOpacity
+import org.maplibre.android.style.layers.PropertyFactory.fillOutlineColor
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
 import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.max
 
 private const val UTM_LAT = 43.55105
@@ -77,6 +87,8 @@ private const val CAMPUS_ZOOM = 16.0
 private const val BUILDING_ZOOM = 17.6
 private const val LIGHT_STYLE = "https://tiles.openfreemap.org/styles/positron"
 private const val DARK_STYLE = "https://tiles.openfreemap.org/styles/dark"
+private const val SELECTED_BUILDING_SOURCE = "gapwise-selected-building-source"
+private const val SELECTED_BUILDING_FILL = "gapwise-selected-building-fill"
 
 private val BaseDays = listOf(
     DayOfWeek.MONDAY,
@@ -110,7 +122,6 @@ private val BuildingPoints = listOf(
     BuildingPoint("DW", "Erindale Studio Theatre", 43.5499078, -79.6661378),
 ).associateBy { it.code }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     meetings: List<Meeting>,
@@ -170,20 +181,14 @@ fun MapScreen(
                         modifier = Modifier.heightIn(min = 44.dp),
                         shape = RoundedCornerShape(8.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Tune,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                        )
+                        Icon(Icons.Outlined.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
                         Text("Options", modifier = Modifier.padding(start = 6.dp), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
                 if (availableTerms.size > 1) {
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                         shape = WebControlShape,
                         color = MaterialTheme.colorScheme.background,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -203,9 +208,7 @@ fun MapScreen(
                 }
 
                 Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 9.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 9.dp),
                     shape = WebControlShape,
                     color = MaterialTheme.colorScheme.background,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -226,30 +229,11 @@ fun MapScreen(
         }
 
         item {
-            CampusMapCard(
-                meetings = dayMeetings,
-                darkTheme = darkTheme,
-            )
+            CampusMapCard(meetings = dayMeetings, darkTheme = darkTheme)
         }
     }
 
-    if (optionsOpen) {
-        ModalBottomSheet(
-            onDismissRequest = { optionsOpen = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Route options", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Walking speed, transition buffer, indoor preference, and step-free routing are available from More.",
-                    modifier = Modifier.padding(top = 7.dp, bottom = 24.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                )
-            }
-        }
-    }
+    RoutePreferencesSheet(open = optionsOpen, onDismiss = { optionsOpen = false })
 }
 
 @Composable
@@ -273,41 +257,39 @@ private fun CampusMapCard(
         if (normalized.isBlank()) emptyList()
         else BuildingPoints.values.filter { point ->
             val code = point.code.lowercase()
-            point.code.lowercase().contains(normalized) ||
-                point.name.lowercase().contains(normalized) ||
-                compact.startsWith(code)
+            code.contains(normalized) || point.name.lowercase().contains(normalized) || compact.startsWith(code)
         }.take(8)
     }
     val selected = selectedCode?.let(BuildingPoints::get)
     val selectedMeeting = selectedMeetingId?.let { id -> destinations.firstOrNull { it.id == id } }
-    val mapKey = destinations.joinToString("|") { "${it.id}:${it.buildingCode}:${it.startTime}" }
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(390.dp),
+        modifier = Modifier.fillMaxWidth().height(390.dp),
         shape = RoundedCornerShape(11.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = 0.dp,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            key(darkTheme, mapKey) {
-                UtmMap(
-                    destinations = destinations,
-                    darkTheme = darkTheme,
-                    focusedBuilding = selected,
-                    focusedMeeting = selectedMeeting,
-                    fitRequest = fitRequest,
-                    campusRequest = campusRequest,
-                    onMeetingSelected = { id ->
-                        selectedMeetingId = id
-                        selectedCode = null
-                        query = ""
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
+            UtmMap(
+                destinations = destinations,
+                darkTheme = darkTheme,
+                focusedBuilding = selected,
+                focusedMeeting = selectedMeeting,
+                fitRequest = fitRequest,
+                campusRequest = campusRequest,
+                onMeetingSelected = { id ->
+                    selectedMeetingId = id
+                    selectedCode = null
+                    query = ""
+                },
+                onBuildingSelected = { code ->
+                    selectedMeetingId = null
+                    selectedCode = code
+                    query = ""
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
 
             Column(
                 modifier = Modifier
@@ -325,21 +307,14 @@ private fun CampusMapCard(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
-                        )
+                        Icon(Icons.Outlined.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         BasicTextField(
                             value = query,
                             onValueChange = { query = it },
                             singleLine = true,
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.tertiary),
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 9.dp),
+                            modifier = Modifier.weight(1f).padding(start = 9.dp),
                             decorationBox = { inner ->
                                 if (query.isBlank()) {
                                     Text("Search MN, Deerfield, Kaneff…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
@@ -352,9 +327,7 @@ private fun CampusMapCard(
 
                 if (query.isNotBlank()) {
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 5.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                         shape = RoundedCornerShape(9.dp),
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.99f),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -393,12 +366,7 @@ private fun CampusMapCard(
                                                 fontWeight = FontWeight.Bold,
                                             )
                                         }
-                                        Text(
-                                            building.name,
-                                            modifier = Modifier.padding(start = 10.dp),
-                                            fontSize = 12.dp.value.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
+                                        Text(building.name, modifier = Modifier.padding(start = 10.dp), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -408,9 +376,7 @@ private fun CampusMapCard(
             }
 
             Column(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 84.dp, end = 10.dp),
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 84.dp, end = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 MapControl(Icons.Outlined.Maximize) {
@@ -429,19 +395,13 @@ private fun CampusMapCard(
                 MeetingMapCard(
                     meeting = selectedMeeting,
                     onClose = { selectedMeetingId = null },
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .padding(10.dp),
+                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(10.dp),
                 )
             } else if (selected != null) {
                 BuildingMapCard(
                     building = selected,
                     onClose = { selectedCode = null },
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .padding(10.dp),
+                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(10.dp),
                 )
             }
         }
@@ -461,12 +421,7 @@ private fun MeetingMapCard(meeting: Meeting, onClose: () -> Unit, modifier: Modi
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     WebEyebrow("${meeting.buildingCode ?: "UTM"} · UTM")
-                    Text(
-                        point?.name ?: meeting.locationLabel,
-                        modifier = Modifier.padding(top = 4.dp),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Text(point?.name ?: meeting.locationLabel, modifier = Modifier.padding(top = 4.dp), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         "${formatTimeLabel(meeting.startTime)} · ${meeting.courseCode} · ${meeting.locationLabel}",
                         modifier = Modifier.padding(top = 5.dp),
@@ -474,16 +429,7 @@ private fun MeetingMapCard(meeting: Meeting, onClose: () -> Unit, modifier: Modi
                         fontSize = 11.sp,
                     )
                 }
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = "Close class details",
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(7.dp))
-                        .clickable(onClick = onClose)
-                        .padding(7.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                CloseMapCardButton("Close class details", onClose)
             }
         }
     }
@@ -501,41 +447,17 @@ private fun BuildingMapCard(building: BuildingPoint, onClose: () -> Unit, modifi
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     WebEyebrow("${building.code} · ${building.kind}")
-                    Text(
-                        building.name,
-                        modifier = Modifier.padding(top = 5.dp),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Text(building.name, modifier = Modifier.padding(top = 5.dp), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = "Close building details",
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(7.dp))
-                        .clickable(onClick = onClose)
-                        .padding(7.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                CloseMapCardButton("Close building details", onClose)
             }
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "${building.mappedEntrances} mapped ${if (building.mappedEntrances == 1) "entrance" else "entrances"}",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "Partial coverage",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.5.sp,
-                )
+                Text("${building.mappedEntrances} mapped ${if (building.mappedEntrances == 1) "entrance" else "entrances"}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("Partial coverage", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.5.sp)
             }
             Text(
                 "${building.mappedEntrances} source-backed mapped ${if (building.mappedEntrances == 1) "entrance is" else "entrances are"} known. Other entrances may be missing. Indoor room paths are not currently mapped.",
@@ -549,12 +471,19 @@ private fun BuildingMapCard(building: BuildingPoint, onClose: () -> Unit, modifi
 }
 
 @Composable
+private fun CloseMapCardButton(description: String, onClose: () -> Unit) {
+    Icon(
+        imageVector = Icons.Outlined.Close,
+        contentDescription = description,
+        modifier = Modifier.size(30.dp).clip(RoundedCornerShape(7.dp)).clickable(onClick = onClose).padding(7.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
 private fun MapControl(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Surface(
-        modifier = Modifier
-            .size(38.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick),
+        modifier = Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)).clickable(onClick = onClick),
         shape = RoundedCornerShape(9.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -574,11 +503,15 @@ private fun UtmMap(
     fitRequest: Int,
     campusRequest: Int,
     onMeetingSelected: (String) -> Unit,
+    onBuildingSelected: (String) -> Unit,
     modifier: Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val styleUrl = if (darkTheme) DARK_STYLE else LIGHT_STYLE
-    val mapView = remember(styleUrl, destinations) {
+    val meetingSelection by rememberUpdatedState(onMeetingSelected)
+    val buildingSelection by rememberUpdatedState(onBuildingSelected)
+
+    val mapView = remember(context, styleUrl) {
         MapLibre.getInstance(context)
         MapView(context).apply {
             onCreate(null)
@@ -589,108 +522,208 @@ private fun UtmMap(
                 map.uiSettings.setAttributionEnabled(true)
                 map.uiSettings.setCompassEnabled(false)
                 map.uiSettings.setAllGesturesEnabled(true)
-                map.cameraPosition = CameraPosition.Builder()
-                    .target(LatLng(UTM_LAT, UTM_LON))
-                    .zoom(CAMPUS_ZOOM)
-                    .build()
-                map.setOnMarkerClickListener { marker ->
-                    val snippet = marker.snippet.orEmpty()
-                    if (snippet.startsWith("meeting:")) {
-                        onMeetingSelected(snippet.removePrefix("meeting:"))
-                        true
-                    } else {
-                        false
-                    }
-                }
-                map.setStyle(styleUrl) {
-                    val accent = if (darkTheme) 0xFF60A5FA.toInt() else 0xFF146BB8.toInt()
-                    val routePoints = destinations.mapNotNull { meeting ->
-                        meeting.buildingCode?.let(BuildingPoints::get)?.let { point ->
-                            LatLng(point.latitude, point.longitude)
-                        }
-                    }
-                    if (routePoints.size > 1 && routePoints.distinct().size > 1) {
-                        map.addPolyline(
-                            PolylineOptions()
-                                .addAll(routePoints)
-                                .color(accent)
-                                .width(4f),
-                        )
-                    }
-
-                    val grouped = destinations.groupBy { it.buildingCode }
-                    grouped.forEach { (code, buildingMeetings) ->
-                        val point = code?.let(BuildingPoints::get) ?: return@forEach
-                        buildingMeetings.sortedBy { it.startTime }.forEachIndexed { index, meeting ->
-                            val latitudeOffset = index * 0.000075
-                            map.addMarker(
-                                MarkerOptions()
-                                    .position(LatLng(point.latitude + latitudeOffset, point.longitude))
-                                    .icon(
-                                        IconFactory.getInstance(context).fromBitmap(
-                                            createTimeMarkerBitmap(
-                                                label = formatTimeLabel(meeting.startTime),
-                                                darkTheme = darkTheme,
-                                                density = context.resources.displayMetrics.density,
-                                            ),
-                                        ),
-                                    )
-                                    .snippet("meeting:${meeting.id}"),
-                            )
-                        }
-                    }
-                    fitDayRoute(map, destinations, animated = false)
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(focusedBuilding?.code, focusedMeeting?.id, mapView) {
-        mapView.getMapAsync { map ->
-            val point = focusedMeeting?.buildingCode?.let(BuildingPoints::get) ?: focusedBuilding
-            if (point != null) {
-                map.animateCamera(
-                    CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), BUILDING_ZOOM),
-                    520,
-                )
-            }
-        }
-    }
-
-    LaunchedEffect(fitRequest, mapView) {
-        if (fitRequest > 0) mapView.getMapAsync { map -> fitDayRoute(map, destinations, animated = true) }
-    }
-
-    LaunchedEffect(campusRequest, mapView) {
-        if (campusRequest > 0) {
-            mapView.getMapAsync { map ->
-                map.animateCamera(
-                    CameraUpdateFactory.newLatLngZoom(LatLng(UTM_LAT, UTM_LON), CAMPUS_ZOOM),
-                    520,
-                )
+                map.cameraPosition = CameraPosition.Builder().target(LatLng(UTM_LAT, UTM_LON)).zoom(CAMPUS_ZOOM).build()
+                map.setStyle(styleUrl)
             }
         }
     }
 
     DisposableEffect(mapView) {
+        var mapClickListener: org.maplibre.android.maps.MapLibreMap.OnMapClickListener? = null
+        mapView.getMapAsync { map ->
+            map.setOnMarkerClickListener { marker ->
+                val snippet = marker.snippet.orEmpty()
+                if (snippet.startsWith("meeting:")) {
+                    meetingSelection(snippet.removePrefix("meeting:"))
+                    true
+                } else false
+            }
+            val listener = org.maplibre.android.maps.MapLibreMap.OnMapClickListener { latLng ->
+                val style = map.style ?: return@OnMapClickListener false
+                val feature = renderedBuildingFeature(map, style, latLng, preferredCode = null)
+                    ?: return@OnMapClickListener false
+                val building = buildingForFeature(feature, latLng) ?: return@OnMapClickListener false
+                highlightFeature(style, feature, darkTheme)
+                buildingSelection(building.code)
+                true
+            }
+            map.addOnMapClickListener(listener)
+            mapClickListener = listener
+        }
         onDispose {
+            mapView.getMapAsync { map -> mapClickListener?.let(map::removeOnMapClickListener) }
             mapView.onPause()
             mapView.onStop()
             mapView.onDestroy()
         }
     }
 
+    LaunchedEffect(destinations, mapView, darkTheme) {
+        mapView.getMapAsync { map ->
+            map.getStyle { style ->
+                map.removeAnnotations()
+                val accent = if (darkTheme) 0xFF60A5FA.toInt() else 0xFF146BB8.toInt()
+                val routePoints = destinations.mapNotNull { meeting ->
+                    meeting.buildingCode?.let(BuildingPoints::get)?.let { point -> LatLng(point.latitude, point.longitude) }
+                }
+                if (routePoints.size > 1 && routePoints.distinct().size > 1) {
+                    map.addPolyline(PolylineOptions().addAll(routePoints).color(accent).width(4f))
+                }
+                val grouped = destinations.groupBy { it.buildingCode }
+                grouped.forEach { (code, buildingMeetings) ->
+                    val point = code?.let(BuildingPoints::get) ?: return@forEach
+                    buildingMeetings.sortedBy { it.startTime }.forEachIndexed { index, meeting ->
+                        val latitudeOffset = index * 0.000075
+                        map.addMarker(
+                            MarkerOptions()
+                                .position(LatLng(point.latitude + latitudeOffset, point.longitude))
+                                .icon(
+                                    IconFactory.getInstance(context).fromBitmap(
+                                        createTimeMarkerBitmap(
+                                            label = formatTimeLabel(meeting.startTime),
+                                            darkTheme = darkTheme,
+                                            density = context.resources.displayMetrics.density,
+                                        ),
+                                    ),
+                                )
+                                .snippet("meeting:${meeting.id}"),
+                        )
+                    }
+                }
+                if (focusedBuilding == null && focusedMeeting == null) clearBuildingHighlight(style)
+                fitDayRoute(map, destinations, animated = true)
+            }
+        }
+    }
+
+    LaunchedEffect(focusedBuilding?.code, focusedMeeting?.id, mapView, darkTheme) {
+        mapView.getMapAsync { map ->
+            val point = focusedMeeting?.buildingCode?.let(BuildingPoints::get) ?: focusedBuilding
+            map.getStyle { style ->
+                if (point == null) {
+                    clearBuildingHighlight(style)
+                    return@getStyle
+                }
+                map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), BUILDING_ZOOM), 420)
+                mapView.postDelayed({
+                    map.getStyle { currentStyle ->
+                        val feature = renderedBuildingFeature(
+                            map,
+                            currentStyle,
+                            LatLng(point.latitude, point.longitude),
+                            preferredCode = point.code,
+                        )
+                        if (feature != null) highlightFeature(currentStyle, feature, darkTheme)
+                    }
+                }, 440)
+            }
+        }
+    }
+
+    LaunchedEffect(fitRequest, mapView) {
+        if (fitRequest > 0) mapView.getMapAsync { map ->
+            map.getStyle { style -> clearBuildingHighlight(style) }
+            fitDayRoute(map, destinations, animated = true)
+        }
+    }
+
+    LaunchedEffect(campusRequest, mapView) {
+        if (campusRequest > 0) mapView.getMapAsync { map ->
+            map.getStyle { style -> clearBuildingHighlight(style) }
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(UTM_LAT, UTM_LON), CAMPUS_ZOOM), 420)
+        }
+    }
+
     AndroidView(factory = { mapView }, modifier = modifier)
+}
+
+private fun renderedBuildingFeature(
+    map: org.maplibre.android.maps.MapLibreMap,
+    style: Style,
+    coordinate: LatLng,
+    preferredCode: String?,
+): Feature? {
+    val layerIds = buildingLayerIds(style)
+    if (layerIds.isEmpty()) return null
+    val center = map.projection.toScreenLocation(coordinate)
+    val offsets = listOf(
+        0f to 0f,
+        8f to 0f,
+        -8f to 0f,
+        0f to 8f,
+        0f to -8f,
+        14f to 14f,
+        -14f to 14f,
+        14f to -14f,
+        -14f to -14f,
+    )
+    val features = offsets.asSequence()
+        .flatMap { (dx, dy) -> map.queryRenderedFeatures(PointF(center.x + dx, center.y + dy), layerIds).asSequence() }
+        .distinctBy { it.id() ?: it.toJson() }
+        .toList()
+    if (features.isEmpty()) return null
+    if (preferredCode != null) {
+        val building = BuildingPoints[preferredCode]
+        val match = features.firstOrNull { featureMatchesBuilding(it, building) }
+        if (match != null) return match
+    }
+    return features.firstOrNull()
+}
+
+private fun buildingLayerIds(style: Style): Array<String> = style.layers.mapNotNull { layer ->
+    when (layer) {
+        is FillLayer -> if (layer.sourceLayer == "building") layer.id else null
+        is FillExtrusionLayer -> if (layer.sourceLayer == "building") layer.id else null
+        else -> null
+    }
+}.toTypedArray()
+
+private fun featureMatchesBuilding(feature: Feature, building: BuildingPoint?): Boolean {
+    if (building == null) return false
+    val candidates = listOf("ref", "name", "name:en", "short_name")
+        .mapNotNull { key ->
+            runCatching { if (feature.hasProperty(key)) feature.getStringProperty(key) else null }.getOrNull()
+        }
+        .map { it.trim().lowercase() }
+    val code = building.code.lowercase()
+    val name = building.name.lowercase()
+    return candidates.any { it == code || it == name || it.contains(name) }
+}
+
+private fun buildingForFeature(feature: Feature, tap: LatLng): BuildingPoint? {
+    BuildingPoints.values.firstOrNull { featureMatchesBuilding(feature, it) }?.let { return it }
+    val nearest = BuildingPoints.values.minByOrNull { point ->
+        hypot(point.latitude - tap.latitude, (point.longitude - tap.longitude) * 0.73)
+    } ?: return null
+    val distance = hypot(nearest.latitude - tap.latitude, (nearest.longitude - tap.longitude) * 0.73)
+    return nearest.takeIf { distance < 0.00135 }
+}
+
+private fun highlightFeature(style: Style, feature: Feature, darkTheme: Boolean) {
+    clearBuildingHighlight(style)
+    style.addSource(GeoJsonSource(SELECTED_BUILDING_SOURCE, feature))
+    val accent = if (darkTheme) "#60A5FA" else "#146BB8"
+    style.addLayer(
+        FillLayer(SELECTED_BUILDING_FILL, SELECTED_BUILDING_SOURCE).withProperties(
+            fillColor(accent),
+            fillOpacity(0.28f),
+            fillOutlineColor(accent),
+        ),
+    )
+}
+
+private fun clearBuildingHighlight(style: Style) {
+    if (style.getLayer(SELECTED_BUILDING_FILL) != null) style.removeLayer(SELECTED_BUILDING_FILL)
+    if (style.getSource(SELECTED_BUILDING_SOURCE) != null) style.removeSource(SELECTED_BUILDING_SOURCE)
 }
 
 private fun fitDayRoute(map: org.maplibre.android.maps.MapLibreMap, destinations: List<Meeting>, animated: Boolean) {
     val points = destinations.mapNotNull { meeting -> meeting.buildingCode?.let(BuildingPoints::get) }
     if (points.isEmpty()) {
         val update = CameraUpdateFactory.newLatLngZoom(LatLng(UTM_LAT, UTM_LON), CAMPUS_ZOOM)
-        if (animated) map.animateCamera(update, 520) else map.moveCamera(update)
+        if (animated) map.animateCamera(update, 420) else map.moveCamera(update)
         return
     }
-
     val centerLat = points.map { it.latitude }.average()
     val centerLon = points.map { it.longitude }.average()
     val latSpan = points.maxOf { it.latitude } - points.minOf { it.latitude }
@@ -704,7 +737,7 @@ private fun fitDayRoute(map: org.maplibre.android.maps.MapLibreMap, destinations
         else -> 15.2
     }
     val update = CameraUpdateFactory.newLatLngZoom(LatLng(centerLat, centerLon), zoom)
-    if (animated) map.animateCamera(update, 520) else map.moveCamera(update)
+    if (animated) map.animateCamera(update, 420) else map.moveCamera(update)
 }
 
 private fun createTimeMarkerBitmap(label: String, darkTheme: Boolean, density: Float): Bitmap {
@@ -734,7 +767,6 @@ private fun createTimeMarkerBitmap(label: String, darkTheme: Boolean, density: F
     val rect = RectF(0f, 0f, width.toFloat(), bodyHeight.toFloat())
     canvas.drawRoundRect(rect, radius, radius, fill)
     canvas.drawRoundRect(rect, radius, radius, stroke)
-
     val center = width / 2f
     val tail = Path().apply {
         moveTo(center - 5f * density, bodyHeight.toFloat() - 1f)
@@ -743,7 +775,6 @@ private fun createTimeMarkerBitmap(label: String, darkTheme: Boolean, density: F
         close()
     }
     canvas.drawPath(tail, fill)
-
     val baseline = bodyHeight / 2f - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
     canvas.drawText(label, (width - textWidth) / 2f, baseline, textPaint)
     return bitmap
