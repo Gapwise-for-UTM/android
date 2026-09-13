@@ -1,8 +1,10 @@
 package ca.gapwise.android.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Today
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -24,10 +26,22 @@ internal enum class Destination(
         pageLabel = "Timetable",
         icon = Icons.Outlined.CalendarMonth,
     ),
+    GapPlan(
+        route = "gap-plan",
+        label = "Gap Plan",
+        pageLabel = "Gap plan",
+        icon = Icons.Outlined.AutoAwesome,
+    ),
     Map(
         route = "map",
         label = "Map",
         pageLabel = "UTM campus map",
         icon = Icons.Outlined.Map,
+    ),
+    Settings(
+        route = "settings",
+        label = "Settings",
+        pageLabel = "Settings",
+        icon = Icons.Outlined.Settings,
     ),
 }

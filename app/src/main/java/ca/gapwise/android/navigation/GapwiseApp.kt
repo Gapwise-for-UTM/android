@@ -2,6 +2,7 @@ package ca.gapwise.android.navigation
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,16 +30,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import ca.gapwise.android.R
 import ca.gapwise.android.core.model.Meeting
 import ca.gapwise.android.data.timetable.IcsParser
+import ca.gapwise.android.feature.gapplan.GapPlanScreen
 import ca.gapwise.android.feature.map.MapScreen
+import ca.gapwise.android.feature.settings.SettingsScreen
 import ca.gapwise.android.feature.timetable.TimetableScreen
 import ca.gapwise.android.feature.today.TodayScreen
 
@@ -118,8 +123,22 @@ fun GapwiseApp() {
             composable(Destination.Timetable.route) {
                 TimetableScreen(meetings = meetings, importStatus = importStatus, onImport = startImport)
             }
+            composable(Destination.GapPlan.route) {
+                GapPlanScreen(meetings = meetings, onImport = startImport)
+            }
             composable(Destination.Map.route) {
                 MapScreen(meetings = meetings)
+            }
+            composable(Destination.Settings.route) {
+                SettingsScreen(
+                    meetings = meetings,
+                    importStatus = importStatus,
+                    onImport = startImport,
+                    onClearTimetable = {
+                        meetings = emptyList()
+                        importStatus = "Timetable cleared from this app session."
+                    },
+                )
             }
         }
     }
@@ -140,21 +159,13 @@ private fun GapwiseTopBar(pageLabel: String) {
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
-                    Surface(
+                    Image(
+                        painter = painterResource(R.drawable.gapwise_logo_mark),
+                        contentDescription = "Gapwise",
                         modifier = Modifier.size(28.dp),
-                        shape = RoundedCornerShape(9.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "G",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Black,
-                            )
-                        }
-                    }
+                    )
                     Text(
                         text = "Gapwise",
                         style = MaterialTheme.typography.titleMedium,
@@ -178,7 +189,7 @@ private fun GapwiseBottomBar(
     currentRoute: String,
     onNavigate: (Destination) -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.background) {
+    Surface(color = MaterialTheme.colorScheme.background.copy(alpha = 0.98f)) {
         Column(modifier = Modifier.navigationBarsPadding()) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -188,21 +199,33 @@ private fun GapwiseBottomBar(
                         modifier = Modifier
                             .weight(1f)
                             .clickable(role = Role.Tab) { onNavigate(destination) }
-                            .padding(vertical = 9.dp),
+                            .padding(top = 8.dp, bottom = 7.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
-                        Icon(
-                            imageVector = destination.icon,
-                            contentDescription = destination.label,
-                            modifier = Modifier.size(19.dp),
-                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            if (selected) {
+                                Surface(
+                                    modifier = Modifier.size(width = 34.dp, height = 24.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                    content = {},
+                                )
+                            }
+                            Icon(
+                                imageVector = destination.icon,
+                                contentDescription = destination.label,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Text(
                             text = destination.label,
-                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            lineHeight = 10.sp,
                             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.SemiBold,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
                         )
                     }
                 }

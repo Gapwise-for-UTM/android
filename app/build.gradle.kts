@@ -45,6 +45,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
 
+    // OpenGL is deliberately used for the widest emulator/device compatibility.
+    implementation("org.maplibre.gl:android-sdk-opengl:13.6.1")
+
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
