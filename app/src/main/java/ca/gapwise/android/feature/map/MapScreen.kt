@@ -658,7 +658,7 @@ private fun renderedBuildingFeature(
         -14f to -14f,
     )
     val features = offsets.asSequence()
-        .flatMap { (dx, dy) -> map.queryRenderedFeatures(PointF(center.x + dx, center.y + dy), layerIds).asSequence() }
+        .flatMap { (dx, dy) -> map.queryRenderedFeatures(PointF(center.x + dx, center.y + dy), *layerIds).asSequence() }
         .distinctBy { it.id() ?: it.toJson() }
         .toList()
     if (features.isEmpty()) return null
