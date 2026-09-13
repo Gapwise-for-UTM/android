@@ -636,7 +636,6 @@ private fun UtmMap(
                         map.addMarker(
                             MarkerOptions()
                                 .position(LatLng(anchorLat, anchorLon))
-                                .anchor(0.5f, 1f)
                                 .icon(
                                     IconFactory.getInstance(context).fromBitmap(
                                         createTimeMarkerBitmap(
@@ -658,7 +657,6 @@ private fun UtmMap(
                     map.addMarker(
                         MarkerOptions()
                             .position(LatLng(entrance.latitude, entrance.longitude))
-                            .anchor(0.5f, 0.5f)
                             .icon(
                                 IconFactory.getInstance(context).fromBitmap(
                                     createEntranceMarkerBitmap(
@@ -844,9 +842,10 @@ private fun createTimeMarkerBitmap(
     val bodyWidth = (textWidth + horizontalPadding * 2).coerceAtLeast(58f * density)
     val bodyHeight = textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent + verticalPadding * 2
     val shadowPad = 3f * density
-    val verticalSlot = 29f * density
-    // Reserve one slot under the lowest class for the circular E/A/♿ entrance marker.
-    val bottomPadding = (30f + stackFromBottom * 29f) * density
+    // MapLibre centers custom marker bitmaps on their geographic coordinate. Extra transparent
+    // space below the pill therefore produces a stable screen-space upward offset without
+    // inventing fake latitude offsets. One full slot remains below the lowest time for E/A/♿.
+    val bottomPadding = (64f + stackFromBottom * 58f) * density
     val width = (bodyWidth + shadowPad * 2).toInt().coerceAtLeast(1)
     val height = (bodyHeight + shadowPad * 2 + bottomPadding).toInt().coerceAtLeast(1)
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
