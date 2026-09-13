@@ -8,6 +8,7 @@ import org.json.JSONObject
 import org.maplibre.geojson.Feature
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class CampusEntrance(
     val id: String,
@@ -32,10 +33,7 @@ internal data class CampusBuildingGeometry(
 internal data class CampusMapSnapshot(
     val dataVersion: String,
     val buildings: Map<String, CampusBuildingGeometry>,
-) {
-    val footprintFeatures: List<Feature>
-        get() = buildings.values.mapNotNull { it.footprint }
-}
+)
 
 internal data class CampusPathGeometry(
     val status: String,
@@ -51,33 +49,47 @@ internal data class CampusRoutePreferences(
 }
 
 internal object CampusMapApi {
-    private const val MAP_URL = "https://gapwise.ca/api/utm-map"
-    private const val PATH_URL = "https://gapwise.ca/api/utm-path"
+    private const val MAP_URL = "https://gapwise.ca/api/utm-buildings?geometry=1"
+    private const val PATH_URL = "https://gapwise.ca/api/utm-route"
     private const val CONNECT_TIMEOUT_MS = 5_000
     private const val READ_TIMEOUT_MS = 8_000
 
-    suspend fun fetchMap(): CampusMapSnapshot = withContext(Dispatchers.IO) {
-        parseMap(request(MAP_URL, "GET", null))
+    @Volatile
+    private var mapCache: CampusMapSnapshot? = null
+    private val pathCache = ConcurrentHashMap<String, CampusPathGeometry>()
+
+    suspend fun fetchMap(): CampusMapSnapshot {
+        mapCache?.let { return it }
+        return withContext(Dispatchers.IO) {
+            mapCache ?: parseMap(request(MAP_URL, "GET", null)).also { mapCache = it }
+        }
     }
 
     suspend fun fetchPath(
         from: String,
         to: String,
         preferences: CampusRoutePreferences,
-    ): CampusPathGeometry = withContext(Dispatchers.IO) {
-        if (from == to) return@withContext CampusPathGeometry("same-building", emptyList())
-        val body = JSONObject()
-            .put("from", from)
-            .put("to", to)
-            .put(
-                "preferences",
-                JSONObject()
-                    .put("mode", preferences.mode.apiValue())
-                    .put("walkingSpeedMps", preferences.walkingSpeedMps.toDouble())
-                    .put("transitionBufferMinutes", preferences.transitionBufferMinutes),
-            )
-            .toString()
-        parsePath(request(PATH_URL, "POST", body))
+    ): CampusPathGeometry {
+        if (from == to) return CampusPathGeometry("same-building", emptyList())
+        val cacheKey = "$from>$to@${preferences.cacheKey()}"
+        pathCache[cacheKey]?.let { return it }
+        return withContext(Dispatchers.IO) {
+            pathCache[cacheKey] ?: run {
+                val body = JSONObject()
+                    .put("from", from)
+                    .put("to", to)
+                    .put("includeGeometry", true)
+                    .put(
+                        "preferences",
+                        JSONObject()
+                            .put("mode", preferences.mode.apiValue())
+                            .put("walkingSpeedMps", preferences.walkingSpeedMps.toDouble())
+                            .put("transitionBufferMinutes", preferences.transitionBufferMinutes),
+                    )
+                    .toString()
+                parsePath(request(PATH_URL, "POST", body)).also { pathCache[cacheKey] = it }
+            }
+        }
     }
 
     private fun request(url: String, method: String, body: String?): String {
@@ -86,6 +98,7 @@ internal object CampusMapApi {
             connection.requestMethod = method
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
+            connection.useCaches = true
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("User-Agent", "Gapwise-Android/0.1")
             if (body != null) {
@@ -152,6 +165,7 @@ internal object CampusMapApi {
 
     private fun parsePath(raw: String): CampusPathGeometry {
         val root = JSONObject(raw)
+        val route = root.optJSONObject("route")
         val coordinatesJson = root.optJSONArray("displayCoordinates") ?: JSONArray()
         val coordinates = buildList {
             for (index in 0 until coordinatesJson.length()) {
@@ -160,7 +174,7 @@ internal object CampusMapApi {
             }
         }
         return CampusPathGeometry(
-            status = root.optString("status", if (coordinates.size >= 2) "routed" else "unavailable"),
+            status = route?.optString("status") ?: if (coordinates.size >= 2) "routed" else "unavailable",
             coordinates = coordinates,
         )
     }
