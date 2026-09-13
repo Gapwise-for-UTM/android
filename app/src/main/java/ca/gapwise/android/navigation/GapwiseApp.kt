@@ -64,13 +64,15 @@ import ca.gapwise.android.data.sync.EncryptedCloudSync
 import ca.gapwise.android.data.timetable.IcsParser
 import ca.gapwise.android.feature.gapplan.GapPlanScreen
 import ca.gapwise.android.feature.map.MapScreen
+import ca.gapwise.android.feature.settings.AccountSettingsDialog
 import ca.gapwise.android.feature.settings.CompactMoreSheetContent
-import ca.gapwise.android.feature.settings.SettingsScreen
+import ca.gapwise.android.feature.settings.RoutePreferencesSheet
 import ca.gapwise.android.feature.timetable.TimetableScreen
 import ca.gapwise.android.feature.today.TodayScreen
 import kotlinx.coroutines.launch
 
 private const val TIMETABLE_ENTRY = "timetable.normalized"
+private const val GAPWISE_TODAY_URL = "https://gapwise.ca/today"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,9 +96,7 @@ fun GapwiseApp(
     val cloudSync = remember { EncryptedCloudSync(accountManager) }
     val cloudMaintenance = remember { EncryptedCloudMaintenance(accountManager) }
 
-    var meetings by remember {
-        mutableStateOf(MeetingJson.decodeLocal(secureStore.get(TIMETABLE_ENTRY)))
-    }
+    var meetings by remember { mutableStateOf(MeetingJson.decodeLocal(secureStore.get(TIMETABLE_ENTRY))) }
     var importStatus by remember { mutableStateOf<String?>(null) }
     var account by remember { mutableStateOf<AccountIdentity?>(accountManager.storedIdentity()) }
     var syncEnabled by remember(account?.userId) {
@@ -105,7 +105,8 @@ fun GapwiseApp(
     var syncBusy by remember { mutableStateOf(false) }
     var syncStatus by remember { mutableStateOf<String?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
-    var settingsOpen by remember { mutableStateOf(false) }
+    var accountSettingsOpen by remember { mutableStateOf(false) }
+    var routePreferencesOpen by remember { mutableStateOf(false) }
 
     fun saveTimetable(value: List<Meeting>) {
         meetings = value
@@ -123,20 +124,25 @@ fun GapwiseApp(
         }
     }
 
+    fun signOut() {
+        scope.launch {
+            syncBusy = true
+            accountManager.signOut()
+            account = null
+            syncEnabled = false
+            syncStatus = "Signed out. Your timetable remains saved on this device."
+            syncBusy = false
+        }
+    }
+
     val calendarPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val result = runCatching {
-            val knownLength = context.contentResolver
-                .openAssetFileDescriptor(uri, "r")
-                ?.use { it.length }
-                ?: -1L
+            val knownLength = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
             require(knownLength <= 0L || knownLength <= IcsParser.MAX_ICS_CHARS * 2L) {
                 "Calendar is too large to import safely."
             }
-            val text = context.contentResolver
-                .openInputStream(uri)
-                ?.bufferedReader()
-                ?.use { it.readText() }
+            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 ?: error("Could not read this calendar.")
             IcsParser.parse(text)
         }
@@ -162,11 +168,10 @@ fun GapwiseApp(
         runCatching { accountManager.completeOAuth(callback) }
             .onSuccess { identity ->
                 account = identity
+                syncEnabled = preferences.encryptedSyncEnabled(identity.userId)
                 syncStatus = "Signed in. Turn on encrypted account sync when you want this device linked."
             }
-            .onFailure { error ->
-                syncStatus = error.message ?: "Sign in failed."
-            }
+            .onFailure { error -> syncStatus = error.message ?: "Sign in failed." }
         syncBusy = false
         onAuthCallbackConsumed()
     }
@@ -210,7 +215,17 @@ fun GapwiseApp(
                 )
             }
             composable(Destination.Timetable.route) {
-                TimetableScreen(meetings = meetings, importStatus = importStatus, onImport = startImport)
+                TimetableScreen(
+                    meetings = meetings,
+                    importStatus = importStatus,
+                    onImport = startImport,
+                    onOpenGapPlan = {
+                        navController.navigate(Destination.Gaps.route) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
             }
             composable(Destination.Gaps.route) {
                 GapPlanScreen(meetings = meetings, onImport = startImport)
@@ -240,22 +255,32 @@ fun GapwiseApp(
             )
             CompactMoreSheetContent(
                 themeMode = themeMode,
-                accountLabel = account?.email?.substringBefore('@')?.takeIf { it.isNotBlank() } ?: "Account",
+                accountLabel = account?.email?.substringBefore('@')?.takeIf { it.isNotBlank() }
+                    ?: if (account == null) "Sign in" else "Account",
+                signedIn = account != null,
                 canRemoveTimetable = meetings.isNotEmpty(),
                 onOpenAcademicPreferences = {
                     moreOpen = false
-                    settingsOpen = true
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GAPWISE_TODAY_URL))) }
                 },
                 onToggleTheme = {
                     onThemeModeChange(if (themeMode == AppThemeMode.DARK) AppThemeMode.LIGHT else AppThemeMode.DARK)
                 },
                 onOpenArrivalPreferences = {
                     moreOpen = false
-                    settingsOpen = true
+                    routePreferencesOpen = true
                 },
-                onOpenAccount = {
+                onOpenSettings = {
                     moreOpen = false
-                    settingsOpen = true
+                    accountSettingsOpen = true
+                },
+                onSignOut = {
+                    moreOpen = false
+                    signOut()
+                },
+                onDeleteAccount = {
+                    moreOpen = false
+                    accountSettingsOpen = true
                 },
                 onUpdateTimetable = {
                     moreOpen = false
@@ -271,153 +296,112 @@ fun GapwiseApp(
         }
     }
 
-    if (settingsOpen) {
-        ModalBottomSheet(
-            onDismissRequest = { settingsOpen = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        ) {
-            Text(
-                text = "Preferences",
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant,
-                modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
-            )
-            SettingsScreen(
-                meetings = meetings,
-                importStatus = importStatus,
-                themeMode = themeMode,
-                account = account,
-                syncEnabled = syncEnabled,
-                syncBusy = syncBusy,
-                syncStatus = syncStatus,
-                onThemeModeChange = onThemeModeChange,
-                onImport = {
-                    settingsOpen = false
-                    startImport()
-                },
-                onClearTimetable = {
-                    saveTimetable(emptyList())
-                    importStatus = "Timetable removed from this device."
-                    pushIfEnabled(emptyList())
-                },
-                onSignIn = { provider: AuthProvider ->
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, accountManager.startOAuth(provider)))
-                    }.onFailure { error ->
-                        syncStatus = error.message ?: "Could not open sign in."
-                    }
-                },
-                onSignOut = {
+    RoutePreferencesSheet(
+        open = routePreferencesOpen,
+        onDismiss = { routePreferencesOpen = false },
+    )
+
+    AccountSettingsDialog(
+        open = accountSettingsOpen,
+        account = account,
+        meetings = meetings,
+        syncEnabled = syncEnabled,
+        syncBusy = syncBusy,
+        syncStatus = syncStatus,
+        onDismiss = { accountSettingsOpen = false },
+        onSignIn = { provider: AuthProvider ->
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, accountManager.startOAuth(provider))) }
+                .onFailure { error -> syncStatus = error.message ?: "Could not open sign in." }
+        },
+        onSignOut = {
+            accountSettingsOpen = false
+            signOut()
+        },
+        onSetSyncEnabled = { enabled ->
+            val identity = account
+            if (identity != null) {
+                preferences.setEncryptedSyncEnabled(identity.userId, enabled)
+                syncEnabled = enabled
+                if (enabled) {
                     scope.launch {
                         syncBusy = true
-                        accountManager.signOut()
-                        account = null
-                        syncEnabled = false
-                        syncStatus = "Signed out. Your timetable remains saved on this device."
+                        runCatching { cloudSync.pullOrInitialize(meetings) }
+                            .onSuccess { synced ->
+                                saveTimetable(synced.meetings)
+                                syncStatus = synced.message
+                            }
+                            .onFailure { error ->
+                                preferences.setEncryptedSyncEnabled(identity.userId, false)
+                                syncEnabled = false
+                                syncStatus = error.message ?: "Encrypted sync could not be enabled."
+                            }
                         syncBusy = false
                     }
-                },
-                onSetSyncEnabled = { enabled ->
-                    val identity = account
-                    if (identity != null) {
-                        preferences.setEncryptedSyncEnabled(identity.userId, enabled)
-                        syncEnabled = enabled
-                        if (enabled) {
-                            scope.launch {
-                                syncBusy = true
-                                runCatching { cloudSync.pullOrInitialize(meetings) }
-                                    .onSuccess { synced ->
-                                        saveTimetable(synced.meetings)
-                                        syncStatus = synced.message
-                                    }
-                                    .onFailure { error ->
-                                        preferences.setEncryptedSyncEnabled(identity.userId, false)
-                                        syncEnabled = false
-                                        syncStatus = error.message ?: "Encrypted sync could not be enabled."
-                                    }
-                                syncBusy = false
-                            }
-                        } else {
-                            syncStatus = "Encrypted account sync paused. Cloud data was not deleted."
+                } else {
+                    syncStatus = "Encrypted account sync paused. Cloud data was not deleted."
+                }
+            }
+        },
+        onSyncNow = {
+            if (account != null && syncEnabled) {
+                scope.launch {
+                    syncBusy = true
+                    runCatching { cloudSync.pushSchedule(meetings) }
+                        .onSuccess { synced -> syncStatus = synced.message }
+                        .onFailure { error -> syncStatus = error.message ?: "Encrypted sync failed." }
+                    syncBusy = false
+                }
+            }
+        },
+        onLoadSync = {
+            if (account != null) {
+                scope.launch {
+                    syncBusy = true
+                    runCatching { cloudSync.pullOrInitialize(emptyList()) }
+                        .onSuccess { synced ->
+                            if (!synced.message.contains("Nothing is stored in the cloud yet")) saveTimetable(synced.meetings)
+                            syncStatus = synced.message
                         }
-                    }
-                },
-                onSyncNow = {
-                    if (account != null && syncEnabled) {
-                        scope.launch {
-                            syncBusy = true
-                            runCatching { cloudSync.pushSchedule(meetings) }
-                                .onSuccess { synced -> syncStatus = synced.message }
-                                .onFailure { error -> syncStatus = error.message ?: "Encrypted sync failed." }
-                            syncBusy = false
+                        .onFailure { error -> syncStatus = error.message ?: "Encrypted sync failed." }
+                    syncBusy = false
+                }
+            }
+        },
+        onDeleteSync = {
+            val identity = account
+            if (identity != null) {
+                scope.launch {
+                    syncBusy = true
+                    runCatching { cloudMaintenance.deletePrivateCloud() }
+                        .onSuccess {
+                            preferences.setEncryptedSyncEnabled(identity.userId, false)
+                            syncEnabled = false
+                            syncStatus = "Encrypted synced data deleted. The timetable remains on this device."
                         }
-                    }
-                },
-                onLoadSync = {
-                    if (account != null) {
-                        scope.launch {
-                            syncBusy = true
-                            runCatching { cloudSync.pullOrInitialize(emptyList()) }
-                                .onSuccess { synced ->
-                                    if (!synced.message.contains("Nothing is stored in the cloud yet")) {
-                                        saveTimetable(synced.meetings)
-                                    }
-                                    syncStatus = synced.message
-                                }
-                                .onFailure { error -> syncStatus = error.message ?: "Encrypted sync failed." }
-                            syncBusy = false
+                        .onFailure { error -> syncStatus = error.message ?: "Encrypted cloud deletion failed." }
+                    syncBusy = false
+                }
+            }
+        },
+        onDeleteAccount = {
+            val identity = account
+            if (identity != null) {
+                scope.launch {
+                    syncBusy = true
+                    runCatching { accountMaintenance.deleteAccount() }
+                        .onSuccess {
+                            preferences.setEncryptedSyncEnabled(identity.userId, false)
+                            account = null
+                            syncEnabled = false
+                            accountSettingsOpen = false
+                            syncStatus = "Your Gapwise account and cloud data were permanently deleted."
                         }
-                    }
-                },
-                onDeleteSync = {
-                    val identity = account
-                    if (identity != null) {
-                        scope.launch {
-                            syncBusy = true
-                            runCatching { cloudMaintenance.deletePrivateCloud() }
-                                .onSuccess {
-                                    preferences.setEncryptedSyncEnabled(identity.userId, false)
-                                    syncEnabled = false
-                                    syncStatus = "Encrypted synced data deleted. The timetable remains on this device."
-                                }
-                                .onFailure { error ->
-                                    syncStatus = error.message ?: "Encrypted cloud deletion failed."
-                                }
-                            syncBusy = false
-                        }
-                    }
-                },
-                onDeleteAccount = { clearLocal ->
-                    val identity = account
-                    if (identity != null) {
-                        scope.launch {
-                            syncBusy = true
-                            runCatching { accountMaintenance.deleteAccount() }
-                                .onSuccess {
-                                    preferences.setEncryptedSyncEnabled(identity.userId, false)
-                                    account = null
-                                    syncEnabled = false
-                                    if (clearLocal) {
-                                        saveTimetable(emptyList())
-                                        importStatus = "Local timetable removed with your account."
-                                    }
-                                    syncStatus = "Your Gapwise account and cloud data were permanently deleted."
-                                }
-                                .onFailure { error ->
-                                    syncStatus = error.message ?: "We couldn't delete your account. Please try again."
-                                }
-                            syncBusy = false
-                        }
-                    }
-                },
-            )
-        }
-    }
+                        .onFailure { error -> syncStatus = error.message ?: "We couldn't delete your account. Please try again." }
+                    syncBusy = false
+                }
+            }
+        },
+    )
 }
 
 @Composable
