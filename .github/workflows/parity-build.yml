@@ -3,6 +3,8 @@ name: Android parity build
 on:
   push:
     branches: [web-mobile-ui-parity]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
