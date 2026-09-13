@@ -1,9 +1,12 @@
 package ca.gapwise.android.data.timetable
 
+import ca.gapwise.android.core.model.ASSESSMENT_WINDOW_NOTE
+import ca.gapwise.android.core.model.ActivityType
 import ca.gapwise.android.core.model.Campus
 import ca.gapwise.android.core.model.LocationType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IcsParserTest {
@@ -42,15 +45,47 @@ class IcsParserTest {
         assertEquals(LocationType.PHYSICAL, utm.locationType)
     }
 
-    private fun event(uid: String, summary: String, location: String, start: String, end: String) = listOf(
-        "BEGIN:VEVENT",
-        "UID:$uid",
-        "DTSTART:$start",
-        "DTEND:$end",
-        "SUMMARY:$summary",
-        "LOCATION:$location",
-        "END:VEVENT",
-    ).joinToString("\r\n")
+    @Test
+    fun `ZZ TBA assessment placeholder is RES and remains TBA`() {
+        val parsed = IcsParser.parse(
+            calendar(
+                event(
+                    uid = "assessment",
+                    summary = "MAT157Y5 LEC0101",
+                    location = "ZZ TBA",
+                    start = "20260912T130000",
+                    end = "20260912T150000",
+                    description = "Analysis I\\n**********************",
+                ),
+            ),
+        )
+
+        val meeting = parsed.meetings.single()
+        assertEquals(ActivityType.RES, meeting.activityType)
+        assertEquals(LocationType.TBA, meeting.locationType)
+        assertEquals(ASSESSMENT_WINDOW_NOTE, meeting.notes)
+        assertTrue(meeting.isAssessmentWindow)
+        assertEquals("Reserved assessment window · location TBA", meeting.locationLabel)
+        assertEquals("0101", meeting.sectionCode)
+    }
+
+    private fun event(
+        uid: String,
+        summary: String,
+        location: String,
+        start: String,
+        end: String,
+        description: String = "",
+    ) = buildList {
+        add("BEGIN:VEVENT")
+        add("UID:$uid")
+        add("DTSTART:$start")
+        add("DTEND:$end")
+        add("SUMMARY:$summary")
+        if (description.isNotBlank()) add("DESCRIPTION:$description")
+        add("LOCATION:$location")
+        add("END:VEVENT")
+    }.joinToString("\r\n")
 
     private fun calendar(vararg events: String) = listOf(
         "BEGIN:VCALENDAR",

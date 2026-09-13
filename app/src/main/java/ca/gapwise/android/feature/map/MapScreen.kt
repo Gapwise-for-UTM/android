@@ -8,15 +8,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -36,11 +37,14 @@ import ca.gapwise.android.core.model.Meeting
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 
 private const val UTM_LAT = 43.55105
 private const val UTM_LON = -79.66475
+private const val CAMPUS_ZOOM = 16.0
+private const val BUILDING_ZOOM = 17.4
 private const val LIGHT_STYLE = "https://tiles.openfreemap.org/styles/positron"
 private const val DARK_STYLE = "https://tiles.openfreemap.org/styles/dark"
 
@@ -51,7 +55,6 @@ private data class BuildingPoint(
     val longitude: Double,
 )
 
-// Source-backed entrance points shared with Gapwise web's UTM routing dataset.
 private val BuildingPoints = listOf(
     BuildingPoint("MN", "Maanjiwe nendamowinan", 43.5513221, -79.6654141),
     BuildingPoint("DH", "Deerfield Hall", 43.5503162, -79.6659651),
@@ -84,10 +87,14 @@ fun MapScreen(
         val normalized = query.trim().lowercase()
         if (normalized.isBlank()) emptyList()
         else BuildingPoints.values
-            .filter { it.code.lowercase().contains(normalized) || it.name.lowercase().contains(normalized) }
-            .take(6)
+            .filter { point ->
+                point.code.lowercase().contains(normalized) ||
+                    point.name.lowercase().contains(normalized)
+            }
+            .take(8)
     }
     val selected = selectedCode?.let(BuildingPoints::get)
+    val mapKey = destinations.joinToString("|") { it.buildingCode.orEmpty() }
 
     Box(
         modifier = Modifier
@@ -95,7 +102,7 @@ fun MapScreen(
             .padding(12.dp)
             .clip(RoundedCornerShape(16.dp)),
     ) {
-        key(darkTheme, destinations.joinToString("|") { it.buildingCode.orEmpty() }, selectedCode) {
+        key(darkTheme, mapKey) {
             UtmMap(
                 destinations = destinations,
                 darkTheme = darkTheme,
@@ -108,23 +115,32 @@ fun MapScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(12.dp)
-                .widthIn(max = 360.dp),
+                .fillMaxWidth()
+                .padding(12.dp),
         ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                singleLine = true,
-                placeholder = { Text("Search MN, Deerfield, Kaneff…") },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_lucide_search),
-                        contentDescription = null,
-                    )
-                },
-                shape = RoundedCornerShape(12.dp),
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    placeholder = { Text("Search MN, Deerfield…") },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_lucide_search),
+                            contentDescription = null,
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = { selectedCode = null }) {
+                    Text("Campus")
+                }
+            }
             if (query.isNotBlank()) {
                 Surface(
                     modifier = Modifier
@@ -167,7 +183,11 @@ fun MapScreen(
                                             fontWeight = FontWeight.Bold,
                                         )
                                     }
-                                    Text(building.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        building.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                 }
                             }
                         }
@@ -187,17 +207,30 @@ fun MapScreen(
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
                 tonalElevation = 5.dp,
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
                         "${selected.code} · UTM",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text(selected.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        selected.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     if (classAtBuilding != null) {
                         Text(
                             "${classAtBuilding.courseCode} · ${classAtBuilding.locationLabel}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            "Mapped UTM building",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -218,42 +251,53 @@ private fun UtmMap(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val styleUrl = if (darkTheme) DARK_STYLE else LIGHT_STYLE
-    val mapView = remember(styleUrl, destinations, focusedBuilding) {
+    val mapView = remember(styleUrl, destinations) {
         MapLibre.getInstance(context)
         MapView(context).apply {
             onCreate(null)
             onStart()
             onResume()
             getMapAsync { map ->
-                val focus = focusedBuilding
+                map.uiSettings.setLogoEnabled(false)
+                map.uiSettings.setAttributionEnabled(true)
+                map.uiSettings.setCompassEnabled(true)
+                map.uiSettings.setAllGesturesEnabled(true)
                 map.cameraPosition = CameraPosition.Builder()
-                    .target(if (focus == null) LatLng(UTM_LAT, UTM_LON) else LatLng(focus.latitude, focus.longitude))
-                    .zoom(if (focus == null) 15.8 else 17.2)
+                    .target(LatLng(UTM_LAT, UTM_LON))
+                    .zoom(CAMPUS_ZOOM)
                     .build()
+                map.setOnMarkerClickListener { marker ->
+                    marker.snippet
+                        ?.takeIf(BuildingPoints::containsKey)
+                        ?.let(onBuildingSelected)
+                    false
+                }
                 map.setStyle(styleUrl) {
-                    destinations.forEach { meeting ->
-                        val point = meeting.buildingCode?.let(BuildingPoints::get) ?: return@forEach
+                    BuildingPoints.values.forEach { point ->
                         map.addMarker(
                             MarkerOptions()
                                 .position(LatLng(point.latitude, point.longitude))
-                                .title("${meeting.courseCode} · ${meeting.locationLabel}")
+                                .title("${point.code} · ${point.name}")
                                 .snippet(point.code),
                         )
                     }
-                    if (focus != null && destinations.none { it.buildingCode == focus.code }) {
-                        map.addMarker(
-                            MarkerOptions()
-                                .position(LatLng(focus.latitude, focus.longitude))
-                                .title("${focus.code} · ${focus.name}")
-                                .snippet(focus.code),
-                        )
-                    }
-                    map.setOnMarkerClickListener { marker ->
-                        marker.snippet?.takeIf(BuildingPoints::containsKey)?.let(onBuildingSelected)
-                        false
-                    }
                 }
             }
+        }
+    }
+
+    LaunchedEffect(focusedBuilding?.code, mapView) {
+        mapView.getMapAsync { map ->
+            val focus = focusedBuilding
+            val target = if (focus == null) {
+                LatLng(UTM_LAT, UTM_LON) to CAMPUS_ZOOM
+            } else {
+                LatLng(focus.latitude, focus.longitude) to BUILDING_ZOOM
+            }
+            map.animateCamera(
+                CameraUpdateFactory.newLatLngZoom(target.first, target.second),
+                450,
+            )
         }
     }
 

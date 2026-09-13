@@ -1,5 +1,6 @@
 package ca.gapwise.android.data.timetable
 
+import ca.gapwise.android.core.model.ASSESSMENT_WINDOW_NOTE
 import ca.gapwise.android.core.model.ActivityType
 import ca.gapwise.android.core.model.Campus
 import ca.gapwise.android.core.model.LocationType
@@ -16,9 +17,12 @@ object IcsParser {
     const val MAX_ICS_CHARS = 2_000_000
 
     private val courseCodePattern = Regex("\\b[A-Z]{3}[A-Z0-9]\\d{2}[A-Z][135]\\b")
-    private val sectionPattern = Regex("\\b(LEC|TUT|PRA)\\s*(\\d{4})\\b")
+    private val sectionPattern = Regex("\\b(LEC|TUT|PRA)\\s*(\\d{3,4})\\b")
     private val dateTimePattern = Regex("(\\d{8})T(\\d{4,6})")
     private val utmLocationPattern = Regex("^([A-Z]{1,4}\\d?)\\s+(.+)$")
+    private val reservedLocationPattern = Regex("^ZZ\\s+TBA$", RegexOption.IGNORE_CASE)
+    private val reservedDescriptionLinePattern = Regex("^\\*{6,}$")
+    private val tbaLocationPattern = Regex("(^ZZ(?:\\s|$)|\\bTBA\\b|\\bTBD\\b|TO BE ANNOUNCED|\\bN/?A\\b)", RegexOption.IGNORE_CASE)
 
     fun parse(text: String): ParsedTimetable {
         require(text.length <= MAX_ICS_CHARS) { "Calendar is too large to import safely." }
@@ -57,18 +61,22 @@ object IcsParser {
             "PRA" -> ActivityType.PRA
             else -> ActivityType.OTHER
         }
-        val sectionCode = sectionMatch?.let { "${it.groupValues[1]}${it.groupValues[2]}" }.orEmpty()
+        val sectionCode = sectionMatch?.groupValues?.getOrNull(2).orEmpty()
         val campus = Campus.fromCourseCode(courseCode)
         val rawLocation = property(lines, "LOCATION")?.decodeIcsText()?.trim().orEmpty()
-        val normalizedLocation = rawLocation.uppercase()
+        val normalizedLocation = rawLocation.replace(Regex("\\s+"), " ").trim()
+        val isReservedAssessmentWindow =
+            reservedLocationPattern.matches(normalizedLocation) &&
+                description.lineSequence().any { line -> reservedDescriptionLinePattern.matches(line.trim()) }
+
         val locationType = when {
-            rawLocation.isBlank() -> LocationType.TBA
-            normalizedLocation in setOf("TBA", "TBD", "TO BE ANNOUNCED") -> LocationType.TBA
-            listOf("ONLINE", "VIRTUAL", "ZOOM", "WEB").any(normalizedLocation::contains) -> LocationType.ONLINE
+            normalizedLocation.isBlank() -> LocationType.TBA
+            tbaLocationPattern.containsMatchIn(normalizedLocation) -> LocationType.TBA
+            listOf("ONLINE", "VIRTUAL", "ZOOM", "WEB", "REMOTE").any { marker -> normalizedLocation.uppercase().contains(marker) } -> LocationType.ONLINE
             else -> LocationType.PHYSICAL
         }
         val utmRoom = if (campus == Campus.UTM && locationType == LocationType.PHYSICAL) {
-            utmLocationPattern.matchEntire(rawLocation.uppercase())
+            utmLocationPattern.matchEntire(normalizedLocation.uppercase())
         } else {
             null
         }
@@ -84,7 +92,7 @@ object IcsParser {
                 "$courseCode-${start.date}-${start.minutes}-${sectionCode.ifBlank { "class" }}"
             },
             courseCode = courseCode,
-            activityType = activityType,
+            activityType = if (isReservedAssessmentWindow) ActivityType.RES else activityType,
             sectionCode = sectionCode,
             courseName = courseName,
             startTime = start.minutes,
@@ -92,10 +100,11 @@ object IcsParser {
             weekday = start.date.dayOfWeek,
             term = termForMonth(start.date.monthValue),
             campus = campus,
-            sourceLocation = rawLocation.takeIf(String::isNotBlank),
+            sourceLocation = normalizedLocation.takeIf(String::isNotBlank),
             buildingCode = utmRoom?.groupValues?.getOrNull(1),
             room = utmRoom?.groupValues?.getOrNull(2),
             locationType = locationType,
+            notes = ASSESSMENT_WINDOW_NOTE.takeIf { isReservedAssessmentWindow },
         )
     }
 

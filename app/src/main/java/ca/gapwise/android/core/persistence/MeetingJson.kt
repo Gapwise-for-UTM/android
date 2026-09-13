@@ -1,5 +1,6 @@
 package ca.gapwise.android.core.persistence
 
+import ca.gapwise.android.core.model.ASSESSMENT_WINDOW_NOTE
 import ca.gapwise.android.core.model.ActivityType
 import ca.gapwise.android.core.model.Campus
 import ca.gapwise.android.core.model.LocationType
@@ -31,7 +32,7 @@ object MeetingJson {
                 JSONObject().apply {
                     put("id", meeting.id)
                     put("courseCode", meeting.courseCode)
-                    put("activityType", meeting.activityType.name)
+                    put("activityType", if (meeting.activityType == ActivityType.RES) ActivityType.LEC.name else meeting.activityType.name)
                     put("sectionCode", meeting.sectionCode)
                     put("courseName", meeting.courseName)
                     put("startTime", meeting.startTime)
@@ -46,6 +47,7 @@ object MeetingJson {
                     )
                     put("campus", meeting.campus.name)
                     meeting.sourceLocation?.takeIf(String::isNotBlank)?.let { put("sourceLocation", it) }
+                    meeting.notes?.takeIf(String::isNotBlank)?.let { put("notes", it) }
                     put("locationType", meeting.locationType.name.lowercase())
                 },
             )
@@ -74,39 +76,57 @@ object MeetingJson {
         put("buildingCode", meeting.buildingCode ?: JSONObject.NULL)
         put("room", meeting.room ?: JSONObject.NULL)
         put("locationType", meeting.locationType.name)
+        put("notes", meeting.notes ?: JSONObject.NULL)
     }
 
-    private fun localMeeting(item: JSONObject) = Meeting(
-        id = item.getString("id"),
-        courseCode = item.getString("courseCode"),
-        activityType = ActivityType.valueOf(item.getString("activityType")),
-        sectionCode = item.optString("sectionCode"),
-        courseName = item.optString("courseName"),
-        startTime = item.getInt("startTime"),
-        endTime = item.getInt("endTime"),
-        weekday = DayOfWeek.valueOf(item.getString("weekday")),
-        term = Term.valueOf(item.getString("term")),
-        campus = Campus.valueOf(item.getString("campus")),
-        sourceLocation = nullableString(item, "sourceLocation"),
-        buildingCode = nullableString(item, "buildingCode"),
-        room = nullableString(item, "room"),
-        locationType = LocationType.valueOf(item.getString("locationType")),
-    )
+    private fun localMeeting(item: JSONObject): Meeting {
+        val sourceLocation = nullableString(item, "sourceLocation")
+        val existingNotes = nullableString(item, "notes")
+        val legacyReserved = sourceLocation?.trim()?.equals("ZZ TBA", ignoreCase = true) == true
+        val notes = existingNotes ?: ASSESSMENT_WINDOW_NOTE.takeIf { legacyReserved }
+        val reserved = notes == ASSESSMENT_WINDOW_NOTE
+        return Meeting(
+            id = item.getString("id"),
+            courseCode = item.getString("courseCode"),
+            activityType = if (reserved) ActivityType.RES else ActivityType.valueOf(item.getString("activityType")),
+            sectionCode = item.optString("sectionCode"),
+            courseName = item.optString("courseName"),
+            startTime = item.getInt("startTime"),
+            endTime = item.getInt("endTime"),
+            weekday = DayOfWeek.valueOf(item.getString("weekday")),
+            term = Term.valueOf(item.getString("term")),
+            campus = Campus.valueOf(item.getString("campus")),
+            sourceLocation = sourceLocation,
+            buildingCode = if (reserved) null else nullableString(item, "buildingCode"),
+            room = if (reserved) null else nullableString(item, "room"),
+            locationType = if (reserved) LocationType.TBA else LocationType.valueOf(item.getString("locationType")),
+            notes = notes,
+        )
+    }
 
     private fun webMeeting(item: JSONObject): Meeting {
         val courseCode = item.getString("courseCode").uppercase()
         val sourceLocation = nullableString(item, "sourceLocation")
-        val locationType = runCatching {
-            LocationType.valueOf(item.optString("locationType", "unknown").uppercase())
-        }.getOrElse {
-            if (item.optBoolean("locationUnknown", false)) LocationType.TBA else LocationType.PHYSICAL
+        val existingNotes = nullableString(item, "notes")
+        val legacyReserved = sourceLocation?.trim()?.equals("ZZ TBA", ignoreCase = true) == true
+        val notes = existingNotes ?: ASSESSMENT_WINDOW_NOTE.takeIf { legacyReserved }
+        val reserved = notes == ASSESSMENT_WINDOW_NOTE
+        val locationType = if (reserved) {
+            LocationType.TBA
+        } else {
+            runCatching {
+                LocationType.valueOf(item.optString("locationType", "unknown").uppercase())
+            }.getOrElse {
+                if (item.optBoolean("locationUnknown", false)) LocationType.TBA else LocationType.PHYSICAL
+            }
         }
+        val sourceActivityType = runCatching {
+            ActivityType.valueOf(item.optString("activityType", "OTHER"))
+        }.getOrDefault(ActivityType.OTHER)
         return Meeting(
             id = item.getString("id"),
             courseCode = courseCode,
-            activityType = runCatching {
-                ActivityType.valueOf(item.optString("activityType", "OTHER"))
-            }.getOrDefault(ActivityType.OTHER),
+            activityType = if (reserved) ActivityType.RES else sourceActivityType,
             sectionCode = item.optString("sectionCode"),
             courseName = item.optString("courseName"),
             startTime = item.getInt("startTime"),
@@ -116,9 +136,10 @@ object MeetingJson {
             campus = runCatching { Campus.valueOf(item.optString("campus")) }
                 .getOrElse { Campus.fromCourseCode(courseCode) },
             sourceLocation = sourceLocation,
-            buildingCode = nullableString(item, "buildingCode"),
-            room = nullableString(item, "room"),
+            buildingCode = if (reserved) null else nullableString(item, "buildingCode"),
+            room = if (reserved) null else nullableString(item, "room"),
             locationType = locationType,
+            notes = notes,
         )
     }
 

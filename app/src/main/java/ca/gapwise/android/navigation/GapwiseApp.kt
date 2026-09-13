@@ -7,7 +7,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,8 +50,10 @@ import ca.gapwise.android.core.persistence.AppThemeMode
 import ca.gapwise.android.core.persistence.MeetingJson
 import ca.gapwise.android.core.persistence.SecureLocalStore
 import ca.gapwise.android.data.account.AccountIdentity
+import ca.gapwise.android.data.account.AccountMaintenance
 import ca.gapwise.android.data.account.AuthProvider
 import ca.gapwise.android.data.account.GapwiseAccountManager
+import ca.gapwise.android.data.sync.EncryptedCloudMaintenance
 import ca.gapwise.android.data.sync.EncryptedCloudSync
 import ca.gapwise.android.data.timetable.IcsParser
 import ca.gapwise.android.feature.gapplan.GapPlanScreen
@@ -82,7 +83,9 @@ fun GapwiseApp(
     val secureStore = remember { SecureLocalStore(context.applicationContext) }
     val preferences = remember { AppPreferences(context.applicationContext) }
     val accountManager = remember { GapwiseAccountManager(secureStore) }
+    val accountMaintenance = remember { AccountMaintenance(accountManager) }
     val cloudSync = remember { EncryptedCloudSync(accountManager) }
+    val cloudMaintenance = remember { EncryptedCloudMaintenance(accountManager) }
 
     var meetings by remember {
         mutableStateOf(MeetingJson.decodeLocal(secureStore.get(TIMETABLE_ENTRY)))
@@ -279,12 +282,66 @@ fun GapwiseApp(
                     if (account != null && syncEnabled) {
                         scope.launch {
                             syncBusy = true
-                            runCatching { cloudSync.pullOrInitialize(meetings) }
+                            runCatching { cloudSync.pushSchedule(meetings) }
+                                .onSuccess { synced -> syncStatus = synced.message }
+                                .onFailure { error -> syncStatus = error.message ?: "Encrypted sync failed." }
+                            syncBusy = false
+                        }
+                    }
+                },
+                onLoadSync = {
+                    if (account != null) {
+                        scope.launch {
+                            syncBusy = true
+                            runCatching { cloudSync.pullOrInitialize(emptyList()) }
                                 .onSuccess { synced ->
-                                    saveTimetable(synced.meetings)
+                                    if (!synced.message.contains("Nothing is stored in the cloud yet")) {
+                                        saveTimetable(synced.meetings)
+                                    }
                                     syncStatus = synced.message
                                 }
                                 .onFailure { error -> syncStatus = error.message ?: "Encrypted sync failed." }
+                            syncBusy = false
+                        }
+                    }
+                },
+                onDeleteSync = {
+                    val identity = account
+                    if (identity != null) {
+                        scope.launch {
+                            syncBusy = true
+                            runCatching { cloudMaintenance.deletePrivateCloud() }
+                                .onSuccess {
+                                    preferences.setEncryptedSyncEnabled(identity.userId, false)
+                                    syncEnabled = false
+                                    syncStatus = "Encrypted synced data deleted. The timetable remains on this device."
+                                }
+                                .onFailure { error ->
+                                    syncStatus = error.message ?: "Encrypted cloud deletion failed."
+                                }
+                            syncBusy = false
+                        }
+                    }
+                },
+                onDeleteAccount = { clearLocal ->
+                    val identity = account
+                    if (identity != null) {
+                        scope.launch {
+                            syncBusy = true
+                            runCatching { accountMaintenance.deleteAccount() }
+                                .onSuccess {
+                                    preferences.setEncryptedSyncEnabled(identity.userId, false)
+                                    account = null
+                                    syncEnabled = false
+                                    if (clearLocal) {
+                                        saveTimetable(emptyList())
+                                        importStatus = "Local timetable removed with your account."
+                                    }
+                                    syncStatus = "Your Gapwise account and cloud data were permanently deleted."
+                                }
+                                .onFailure { error ->
+                                    syncStatus = error.message ?: "We couldn't delete your account. Please try again."
+                                }
                             syncBusy = false
                         }
                     }

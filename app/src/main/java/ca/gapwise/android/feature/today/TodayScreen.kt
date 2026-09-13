@@ -2,6 +2,7 @@ package ca.gapwise.android.feature.today
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ca.gapwise.android.core.model.Meeting
+import ca.gapwise.android.core.model.Term
 import ca.gapwise.android.core.model.formatTime
 import java.time.LocalDate
 
@@ -25,12 +27,18 @@ fun TodayScreen(
     importStatus: String?,
     onImport: () -> Unit,
 ) {
+    val today = LocalDate.now()
+    val currentTerm = termForMonth(today.monthValue)
     val todayMeetings = meetings
-        .filter { it.weekday == LocalDate.now().dayOfWeek }
+        .filter {
+            it.term == currentTerm &&
+                it.weekday == today.dayOfWeek &&
+                !it.isAssessmentWindow
+        }
         .sortedBy { it.startTime }
 
     LazyColumn(
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -49,14 +57,14 @@ fun TodayScreen(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "${LocalDate.now().dayOfWeek.name.lowercase().replaceFirstChar(Char::titlecase)}",
+                        text = today.dayOfWeek.name.lowercase().replaceFirstChar(Char::titlecase),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = when {
                             meetings.isEmpty() -> "Import your ACORN calendar to see your day."
-                            todayMeetings.isEmpty() -> "Nothing scheduled today."
+                            todayMeetings.isEmpty() -> "Nothing scheduled today in ${currentTerm.label}."
                             todayMeetings.size == 1 -> "1 class today"
                             else -> "${todayMeetings.size} classes today"
                         },
@@ -110,4 +118,10 @@ fun TodayScreen(
             }
         }
     }
+}
+
+private fun termForMonth(month: Int): Term = when (month) {
+    in 1..4 -> Term.WINTER
+    in 5..8 -> Term.SUMMER
+    else -> Term.FALL
 }

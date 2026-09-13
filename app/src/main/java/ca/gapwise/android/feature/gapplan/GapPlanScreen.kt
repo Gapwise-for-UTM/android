@@ -3,19 +3,14 @@ package ca.gapwise.android.feature.gapplan
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
@@ -132,29 +127,17 @@ fun GapPlanScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column {
-                            Text(
-                                gap.from.weekday.name.lowercase().replaceFirstChar(Char::titlecase),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                durationLabel(gap.minutes),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                        Icon(
-                            imageVector = if (gap.minutes >= 60) Icons.Outlined.AutoAwesome else Icons.Outlined.Schedule,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
+                    Text(
+                        gap.from.weekday.name.lowercase().replaceFirstChar(Char::titlecase),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        durationLabel(gap.minutes),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     Text(
                         "${gap.from.courseCode} → ${gap.to.courseCode}",
                         style = MaterialTheme.typography.titleMedium,
@@ -176,6 +159,7 @@ fun GapPlanScreen(
 }
 
 private fun calculateGaps(meetings: List<Meeting>): List<GapPlanItem> = meetings
+    .filterNot { it.isAssessmentWindow }
     .groupBy { it.weekday }
     .toSortedMap(compareBy(DayOfWeek::getValue))
     .flatMap { (_, dayMeetings) ->
