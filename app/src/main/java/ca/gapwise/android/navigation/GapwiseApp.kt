@@ -5,17 +5,22 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -58,6 +64,7 @@ import ca.gapwise.android.data.sync.EncryptedCloudSync
 import ca.gapwise.android.data.timetable.IcsParser
 import ca.gapwise.android.feature.gapplan.GapPlanScreen
 import ca.gapwise.android.feature.map.MapScreen
+import ca.gapwise.android.feature.settings.CompactMoreSheetContent
 import ca.gapwise.android.feature.settings.SettingsScreen
 import ca.gapwise.android.feature.timetable.TimetableScreen
 import ca.gapwise.android.feature.today.TodayScreen
@@ -98,6 +105,7 @@ fun GapwiseApp(
     var syncBusy by remember { mutableStateOf(false) }
     var syncStatus by remember { mutableStateOf<String?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
 
     fun saveTimetable(value: List<Meeting>) {
         meetings = value
@@ -189,7 +197,17 @@ fun GapwiseApp(
             modifier = Modifier.padding(paddingValues),
         ) {
             composable(Destination.Today.route) {
-                TodayScreen(meetings = meetings, importStatus = importStatus, onImport = startImport)
+                TodayScreen(
+                    meetings = meetings,
+                    importStatus = importStatus,
+                    onImport = startImport,
+                    onDayRoute = {
+                        navController.navigate(Destination.Map.route) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
             }
             composable(Destination.Timetable.route) {
                 TimetableScreen(meetings = meetings, importStatus = importStatus, onImport = startImport)
@@ -207,10 +225,61 @@ fun GapwiseApp(
         ModalBottomSheet(
             onDismissRequest = { moreOpen = false },
             containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         ) {
             Text(
                 text = "More",
-                style = MaterialTheme.typography.titleLarge,
+                fontSize = 19.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                modifier = Modifier.padding(top = 8.dp, bottom = 14.dp),
+            )
+            CompactMoreSheetContent(
+                themeMode = themeMode,
+                accountLabel = account?.email?.substringBefore('@')?.takeIf { it.isNotBlank() } ?: "Account",
+                canRemoveTimetable = meetings.isNotEmpty(),
+                onOpenAcademicPreferences = {
+                    moreOpen = false
+                    settingsOpen = true
+                },
+                onToggleTheme = {
+                    onThemeModeChange(if (themeMode == AppThemeMode.DARK) AppThemeMode.LIGHT else AppThemeMode.DARK)
+                },
+                onOpenArrivalPreferences = {
+                    moreOpen = false
+                    settingsOpen = true
+                },
+                onOpenAccount = {
+                    moreOpen = false
+                    settingsOpen = true
+                },
+                onUpdateTimetable = {
+                    moreOpen = false
+                    startImport()
+                },
+                onRemoveTimetable = {
+                    saveTimetable(emptyList())
+                    importStatus = "Timetable removed from this device."
+                    pushIfEnabled(emptyList())
+                    moreOpen = false
+                },
+            )
+        }
+    }
+
+    if (settingsOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { settingsOpen = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        ) {
+            Text(
+                text = "Preferences",
+                fontSize = 19.sp,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
@@ -228,7 +297,7 @@ fun GapwiseApp(
                 syncStatus = syncStatus,
                 onThemeModeChange = onThemeModeChange,
                 onImport = {
-                    moreOpen = false
+                    settingsOpen = false
                     startImport()
                 },
                 onClearTimetable = {
@@ -377,6 +446,7 @@ private fun GapwiseTopBar(pageLabel: String) {
                         text = "Gapwise",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.5).sp,
                     )
                 }
                 Text(
@@ -432,29 +502,43 @@ private fun MobileNavItem(
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
-    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
+    val accent = MaterialTheme.colorScheme.tertiary
+    val color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
         modifier = modifier
             .heightIn(min = 60.dp)
-            .clickable(role = Role.Tab, onClick = onClick)
-            .padding(vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .background(if (selected) accent.copy(alpha = 0.07f) else Color.Transparent, RoundedCornerShape(7.dp))
+            .clickable(role = Role.Tab, onClick = onClick),
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = label,
-            modifier = Modifier.size(18.dp),
-            tint = color,
-        )
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            lineHeight = 12.sp,
-            color = color,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(top = 4.dp),
-            maxLines = 1,
-        )
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .width(26.dp)
+                    .height(2.dp)
+                    .background(accent, RoundedCornerShape(99.dp)),
+            )
+        }
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = label,
+                modifier = Modifier.size(18.dp),
+                tint = color,
+            )
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                lineHeight = 12.sp,
+                color = color,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 4.dp),
+                maxLines = 1,
+            )
+        }
     }
 }
