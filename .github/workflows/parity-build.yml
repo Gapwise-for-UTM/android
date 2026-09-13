@@ -17,5 +17,6 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - run: chmod +x gradlew
-      - run: ./gradlew :app:assembleDebug --stacktrace
+        with:
+          gradle-version: current
+      - run: gradle :app:assembleDebug --stacktrace
