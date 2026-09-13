@@ -2,8 +2,8 @@ package ca.gapwise.android.feature.map
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
 import androidx.compose.foundation.BorderStroke
@@ -84,7 +84,7 @@ import kotlin.math.max
 private const val UTM_LAT = 43.55105
 private const val UTM_LON = -79.66475
 private const val CAMPUS_ZOOM = 16.0
-private const val BUILDING_ZOOM = 17.6
+private const val BUILDING_ZOOM = 17.25
 private const val LIGHT_STYLE = "https://tiles.openfreemap.org/styles/positron"
 private const val DARK_STYLE = "https://tiles.openfreemap.org/styles/dark"
 private const val SELECTED_BUILDING_SOURCE = "gapwise-selected-building-source"
@@ -104,8 +104,49 @@ private data class BuildingPoint(
     val latitude: Double,
     val longitude: Double,
     val kind: String = "Academic",
-    val mappedEntrances: Int = 1,
 )
+
+private data class EntrancePoint(
+    val id: String,
+    val buildingCode: String,
+    val label: String,
+    val latitude: Double,
+    val longitude: Double,
+    val kind: String = "entrance",
+    val accessibility: String = "unknown",
+)
+
+/**
+ * Source-backed entrance points mirrored from gapwise/src/data/utm/entrances.geojson.
+ * Keep these coordinates exact: class labels and entrance badges intentionally share
+ * the same anchor semantics as the web map.
+ */
+private val EntrancePoints = listOf(
+    EntrancePoint("mn-13738201127", "MN", "Mapped entrance", 43.5513221, -79.6654141),
+    EntrancePoint("dh-13568164836", "DH", "Main entrance A", 43.5503162, -79.6659651),
+    EntrancePoint("dh-13568164837", "DH", "Main entrance B", 43.5505658, -79.6666995),
+    EntrancePoint("dh-13751172451", "DH", "Mapped entrance", 43.5505348, -79.6660506),
+    EntrancePoint("ib-2383650599", "IB", "Main entrance", 43.5516425, -79.6636318),
+    EntrancePoint("ib-2383653565", "IB", "Mapped entrance", 43.5514803, -79.6642634),
+    EntrancePoint("dv-1728238982", "DV", "Main entrance A", 43.5484051, -79.6617704),
+    EntrancePoint("dv-13568164844", "DV", "Accessible main entrance", 43.5494213, -79.6625598, accessibility = "accessible"),
+    EntrancePoint("dv-13736463909", "DV", "Accessible main entrance", 43.5477041, -79.6618689, accessibility = "accessible"),
+    EntrancePoint("dv-370306723", "DV", "Main entrance B", 43.5493975, -79.6623618),
+    EntrancePoint("cct-13568164845", "CCT", "Accessible entrance", 43.5495452, -79.6626873, accessibility = "accessible"),
+    EntrancePoint("hm-13731205434", "HM", "Main entrance", 43.5510334, -79.6630169),
+    EntrancePoint("kn-13568164841", "KN", "Accessible main entrance A", 43.5480958, -79.6635084, accessibility = "accessible"),
+    EntrancePoint("kn-1312579120", "KN", "Accessible main entrance B", 43.5479701, -79.6628687, accessibility = "accessible"),
+    EntrancePoint("kn-13568164842", "KN", "Accessible main entrance C", 43.5485709, -79.6632372, accessibility = "accessible"),
+    EntrancePoint("rawc-13568164832", "RAWC", "Main entrance", 43.5479331, -79.6606714),
+    EntrancePoint("xr-13568164843", "XR", "Main entrance", 43.5488462, -79.6637236),
+    EntrancePoint("xr-2105676602", "XR", "Mapped entrance", 43.5485377, -79.6639869),
+    EntrancePoint("hb-13738956113", "HB", "Main entrance A", 43.5497526, -79.6622362),
+    EntrancePoint("hb-13568164846", "HB", "Main entrance B", 43.5494997, -79.6623068),
+    EntrancePoint("ax-1728239148", "AX", "Mapped pedestrian approach", 43.5481895, -79.6643646, kind = "approach"),
+    EntrancePoint("dw-13767739551", "DW", "Mapped entrance", 43.5499078, -79.6661378),
+)
+
+private val EntrancesByBuilding = EntrancePoints.groupBy { it.buildingCode }
 
 private val BuildingPoints = listOf(
     BuildingPoint("MN", "Maanjiwe nendamowinan", 43.5513221, -79.6654141),
@@ -437,6 +478,7 @@ private fun MeetingMapCard(meeting: Meeting, onClose: () -> Unit, modifier: Modi
 
 @Composable
 private fun BuildingMapCard(building: BuildingPoint, onClose: () -> Unit, modifier: Modifier) {
+    val mappedEntrances = EntrancesByBuilding[building.code].orEmpty().size
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(9.dp),
@@ -456,11 +498,11 @@ private fun BuildingMapCard(building: BuildingPoint, onClose: () -> Unit, modifi
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("${building.mappedEntrances} mapped ${if (building.mappedEntrances == 1) "entrance" else "entrances"}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("$mappedEntrances mapped ${if (mappedEntrances == 1) "entrance" else "entrances"}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 Text("Partial coverage", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.5.sp)
             }
             Text(
-                "${building.mappedEntrances} source-backed mapped ${if (building.mappedEntrances == 1) "entrance is" else "entrances are"} known. Other entrances may be missing. Indoor room paths are not currently mapped.",
+                "$mappedEntrances source-backed mapped ${if (mappedEntrances == 1) "entrance is" else "entrances are"} known. Other entrances may be missing. Indoor room paths are not currently mapped.",
                 modifier = Modifier.padding(top = 10.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 10.5.sp,
@@ -533,10 +575,17 @@ private fun UtmMap(
         mapView.getMapAsync { map ->
             map.setOnMarkerClickListener { marker ->
                 val snippet = marker.snippet.orEmpty()
-                if (snippet.startsWith("meeting:")) {
-                    meetingSelection(snippet.removePrefix("meeting:"))
-                    true
-                } else false
+                when {
+                    snippet.startsWith("meeting:") -> {
+                        meetingSelection(snippet.removePrefix("meeting:"))
+                        true
+                    }
+                    snippet.startsWith("entrance:") -> {
+                        buildingSelection(snippet.substringAfter("entrance:").substringBefore(':'))
+                        true
+                    }
+                    else -> false
+                }
             }
             val listener = org.maplibre.android.maps.MapLibreMap.OnMapClickListener { latLng ->
                 val style = map.style ?: return@OnMapClickListener false
@@ -558,31 +607,44 @@ private fun UtmMap(
         }
     }
 
-    LaunchedEffect(destinations, mapView, darkTheme) {
+    LaunchedEffect(destinations, focusedBuilding?.code, focusedMeeting?.id, mapView, darkTheme) {
         mapView.getMapAsync { map ->
             map.getStyle { style ->
                 map.removeAnnotations()
                 val accent = if (darkTheme) 0xFF60A5FA.toInt() else 0xFF146BB8.toInt()
                 val routePoints = destinations.mapNotNull { meeting ->
-                    meeting.buildingCode?.let(BuildingPoints::get)?.let { point -> LatLng(point.latitude, point.longitude) }
+                    meeting.buildingCode?.let(::primaryEntranceForBuilding)?.let { entrance ->
+                        LatLng(entrance.latitude, entrance.longitude)
+                    } ?: meeting.buildingCode?.let(BuildingPoints::get)?.let { point ->
+                        LatLng(point.latitude, point.longitude)
+                    }
                 }
                 if (routePoints.size > 1 && routePoints.distinct().size > 1) {
                     map.addPolyline(PolylineOptions().addAll(routePoints).color(accent).width(4f))
                 }
+
                 val grouped = destinations.groupBy { it.buildingCode }
                 grouped.forEach { (code, buildingMeetings) ->
-                    val point = code?.let(BuildingPoints::get) ?: return@forEach
-                    buildingMeetings.sortedBy { it.startTime }.forEachIndexed { index, meeting ->
-                        val latitudeOffset = index * 0.000075
+                    val buildingCode = code ?: return@forEach
+                    val building = BuildingPoints[buildingCode] ?: return@forEach
+                    val anchor = primaryEntranceForBuilding(buildingCode)
+                    val anchorLat = anchor?.latitude ?: building.latitude
+                    val anchorLon = anchor?.longitude ?: building.longitude
+                    val ordered = buildingMeetings.sortedBy { it.startTime }
+                    ordered.forEachIndexed { index, meeting ->
+                        val stackFromBottom = ordered.lastIndex - index
                         map.addMarker(
                             MarkerOptions()
-                                .position(LatLng(point.latitude + latitudeOffset, point.longitude))
+                                .position(LatLng(anchorLat, anchorLon))
+                                .anchor(0.5f, 1f)
                                 .icon(
                                     IconFactory.getInstance(context).fromBitmap(
                                         createTimeMarkerBitmap(
                                             label = formatTimeLabel(meeting.startTime),
                                             darkTheme = darkTheme,
                                             density = context.resources.displayMetrics.density,
+                                            stackFromBottom = stackFromBottom,
+                                            selected = meeting.id == focusedMeeting?.id,
                                         ),
                                     ),
                                 )
@@ -590,8 +652,30 @@ private fun UtmMap(
                         )
                     }
                 }
-                if (focusedBuilding == null && focusedMeeting == null) clearBuildingHighlight(style)
-                fitDayRoute(map, destinations, animated = true)
+
+                val entranceBuildingCode = focusedMeeting?.buildingCode ?: focusedBuilding?.code
+                EntrancesByBuilding[entranceBuildingCode].orEmpty().forEach { entrance ->
+                    map.addMarker(
+                        MarkerOptions()
+                            .position(LatLng(entrance.latitude, entrance.longitude))
+                            .anchor(0.5f, 0.5f)
+                            .icon(
+                                IconFactory.getInstance(context).fromBitmap(
+                                    createEntranceMarkerBitmap(
+                                        entrance = entrance,
+                                        darkTheme = darkTheme,
+                                        density = context.resources.displayMetrics.density,
+                                    ),
+                                ),
+                            )
+                            .snippet("entrance:${entrance.buildingCode}:${entrance.id}"),
+                    )
+                }
+
+                if (focusedBuilding == null && focusedMeeting == null) {
+                    clearBuildingHighlight(style)
+                    fitDayRoute(map, destinations, animated = true)
+                }
             }
         }
     }
@@ -604,7 +688,7 @@ private fun UtmMap(
                     clearBuildingHighlight(style)
                     return@getStyle
                 }
-                map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), BUILDING_ZOOM), 420)
+                map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), BUILDING_ZOOM), 360)
                 mapView.postDelayed({
                     map.getStyle { currentStyle ->
                         val feature = renderedBuildingFeature(
@@ -615,7 +699,7 @@ private fun UtmMap(
                         )
                         if (feature != null) highlightFeature(currentStyle, feature, darkTheme)
                     }
-                }, 440)
+                }, 380)
             }
         }
     }
@@ -630,12 +714,14 @@ private fun UtmMap(
     LaunchedEffect(campusRequest, mapView) {
         if (campusRequest > 0) mapView.getMapAsync { map ->
             map.getStyle { style -> clearBuildingHighlight(style) }
-            map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(UTM_LAT, UTM_LON), CAMPUS_ZOOM), 420)
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(UTM_LAT, UTM_LON), CAMPUS_ZOOM), 360)
         }
     }
 
     AndroidView(factory = { mapView }, modifier = modifier)
 }
+
+private fun primaryEntranceForBuilding(code: String): EntrancePoint? = EntrancesByBuilding[code]?.firstOrNull()
 
 private fun renderedBuildingFeature(
     map: org.maplibre.android.maps.MapLibreMap,
@@ -721,7 +807,7 @@ private fun fitDayRoute(map: org.maplibre.android.maps.MapLibreMap, destinations
     val points = destinations.mapNotNull { meeting -> meeting.buildingCode?.let(BuildingPoints::get) }
     if (points.isEmpty()) {
         val update = CameraUpdateFactory.newLatLngZoom(LatLng(UTM_LAT, UTM_LON), CAMPUS_ZOOM)
-        if (animated) map.animateCamera(update, 420) else map.moveCamera(update)
+        if (animated) map.animateCamera(update, 360) else map.moveCamera(update)
         return
     }
     val centerLat = points.map { it.latitude }.average()
@@ -730,53 +816,100 @@ private fun fitDayRoute(map: org.maplibre.android.maps.MapLibreMap, destinations
     val lonSpan = points.maxOf { it.longitude } - points.minOf { it.longitude }
     val spread = max(abs(latSpan), abs(lonSpan))
     val zoom = when {
-        spread < 0.00025 -> 17.35
-        spread < 0.001 -> 16.75
-        spread < 0.0025 -> 16.15
-        spread < 0.0045 -> 15.65
+        spread < 0.00025 -> 17.2
+        spread < 0.001 -> 16.7
+        spread < 0.0025 -> 16.1
+        spread < 0.0045 -> 15.6
         else -> 15.2
     }
     val update = CameraUpdateFactory.newLatLngZoom(LatLng(centerLat, centerLon), zoom)
-    if (animated) map.animateCamera(update, 420) else map.moveCamera(update)
+    if (animated) map.animateCamera(update, 360) else map.moveCamera(update)
 }
 
-private fun createTimeMarkerBitmap(label: String, darkTheme: Boolean, density: Float): Bitmap {
+private fun createTimeMarkerBitmap(
+    label: String,
+    darkTheme: Boolean,
+    density: Float,
+    stackFromBottom: Int,
+    selected: Boolean,
+): Bitmap {
     val horizontalPadding = 10f * density
-    val verticalPadding = 6f * density
-    val tailHeight = 5f * density
+    val verticalPadding = 5f * density
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
-        textSize = 11f * density
+        textSize = 10.5f * density
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
     }
     val textWidth = textPaint.measureText(label)
-    val width = (textWidth + horizontalPadding * 2).toInt().coerceAtLeast((58f * density).toInt())
-    val bodyHeight = (textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent + verticalPadding * 2).toInt()
-    val height = bodyHeight + tailHeight.toInt()
+    val bodyWidth = (textWidth + horizontalPadding * 2).coerceAtLeast(58f * density)
+    val bodyHeight = textPaint.fontMetrics.descent - textPaint.fontMetrics.ascent + verticalPadding * 2
+    val shadowPad = 3f * density
+    val verticalSlot = 29f * density
+    // Reserve one slot under the lowest class for the circular E/A/♿ entrance marker.
+    val bottomPadding = (30f + stackFromBottom * 29f) * density
+    val width = (bodyWidth + shadowPad * 2).toInt().coerceAtLeast(1)
+    val height = (bodyHeight + shadowPad * 2 + bottomPadding).toInt().coerceAtLeast(1)
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
+    val left = shadowPad
+    val top = shadowPad
+    val rect = RectF(left, top, left + bodyWidth, top + bodyHeight)
+    val radius = 11f * density
     val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (darkTheme) android.graphics.Color.rgb(45, 157, 226) else android.graphics.Color.rgb(20, 107, 184)
+        color = if (darkTheme) android.graphics.Color.rgb(38, 145, 220) else android.graphics.Color.rgb(20, 107, 184)
+        setShadowLayer(2.5f * density, 0f, 1.5f * density, 0x66000000)
     }
     val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.25f * density
-        color = if (darkTheme) android.graphics.Color.rgb(113, 198, 255) else android.graphics.Color.rgb(10, 79, 137)
+        strokeWidth = (if (selected) 2.2f else 1.4f) * density
+        color = if (selected) android.graphics.Color.WHITE
+        else if (darkTheme) android.graphics.Color.rgb(113, 198, 255)
+        else android.graphics.Color.rgb(10, 79, 137)
     }
-    val radius = 11f * density
-    val rect = RectF(0f, 0f, width.toFloat(), bodyHeight.toFloat())
     canvas.drawRoundRect(rect, radius, radius, fill)
     canvas.drawRoundRect(rect, radius, radius, stroke)
-    val center = width / 2f
-    val tail = Path().apply {
-        moveTo(center - 5f * density, bodyHeight.toFloat() - 1f)
-        lineTo(center, height.toFloat())
-        lineTo(center + 5f * density, bodyHeight.toFloat() - 1f)
-        close()
+    val baseline = top + bodyHeight / 2f - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
+    canvas.drawText(label, left + (bodyWidth - textWidth) / 2f, baseline, textPaint)
+    return bitmap
+}
+
+private fun createEntranceMarkerBitmap(
+    entrance: EntrancePoint,
+    darkTheme: Boolean,
+    density: Float,
+): Bitmap {
+    val canvasSize = (38f * density).toInt().coerceAtLeast(1)
+    val bitmap = Bitmap.createBitmap(canvasSize, canvasSize, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val center = canvasSize / 2f
+    val radius = 14f * density
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = if (darkTheme) android.graphics.Color.rgb(11, 17, 26) else android.graphics.Color.WHITE
+        setShadowLayer(3f * density, 0f, 1.5f * density, 0x66000000)
     }
-    canvas.drawPath(tail, fill)
-    val baseline = bodyHeight / 2f - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
-    canvas.drawText(label, (width - textWidth) / 2f, baseline, textPaint)
+    val accent = if (darkTheme) android.graphics.Color.rgb(96, 165, 250) else android.graphics.Color.rgb(20, 107, 184)
+    val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = accent
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * density
+        if (entrance.kind == "approach") pathEffect = DashPathEffect(floatArrayOf(4f * density, 3f * density), 0f)
+    }
+    canvas.drawCircle(center, center, radius, fill)
+    canvas.drawCircle(center, center, radius, stroke)
+
+    val markerText = when {
+        entrance.accessibility == "accessible" -> "♿"
+        entrance.kind == "approach" -> "A"
+        else -> "E"
+    }
+    val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = accent
+        textSize = (if (markerText == "♿") 12f else 12.5f) * density
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        textAlign = Paint.Align.CENTER
+    }
+    val baseline = center - (textPaint.fontMetrics.ascent + textPaint.fontMetrics.descent) / 2f
+    canvas.drawText(markerText, center, baseline, textPaint)
     return bitmap
 }
 
