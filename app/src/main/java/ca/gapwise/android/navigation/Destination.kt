@@ -1,47 +1,36 @@
 package ca.gapwise.android.navigation
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Today
-import androidx.compose.ui.graphics.vector.ImageVector
+import ca.gapwise.android.R
 
+/** Mirrors the current Gapwise web mobile shell exactly: four destinations plus More. */
 internal enum class Destination(
     val route: String,
     val label: String,
     val pageLabel: String,
-    val icon: ImageVector,
+    val iconRes: Int,
 ) {
     Today(
         route = "today",
         label = "Today",
         pageLabel = "My day",
-        icon = Icons.Outlined.Today,
+        iconRes = R.drawable.ic_lucide_calendar_clock,
     ),
     Timetable(
         route = "timetable",
         label = "Timetable",
         pageLabel = "Timetable",
-        icon = Icons.Outlined.CalendarMonth,
+        iconRes = R.drawable.ic_lucide_layout_grid,
     ),
-    GapPlan(
-        route = "gap-plan",
-        label = "Gap Plan",
+    Gaps(
+        route = "gaps",
+        label = "Gaps",
         pageLabel = "Gap plan",
-        icon = Icons.Outlined.AutoAwesome,
+        iconRes = R.drawable.ic_lucide_calendar_range,
     ),
     Map(
         route = "map",
         label = "Map",
-        pageLabel = "UTM campus map",
-        icon = Icons.Outlined.Map,
-    ),
-    Settings(
-        route = "settings",
-        label = "Settings",
-        pageLabel = "Settings",
-        icon = Icons.Outlined.Settings,
+        pageLabel = "Campus map",
+        iconRes = R.drawable.ic_lucide_map_pinned,
     ),
 }

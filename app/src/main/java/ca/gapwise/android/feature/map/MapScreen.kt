@@ -1,28 +1,35 @@
 package ca.gapwise.android.feature.map
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import ca.gapwise.android.R
 import ca.gapwise.android.core.model.Campus
 import ca.gapwise.android.core.model.LocationType
 import ca.gapwise.android.core.model.Meeting
@@ -44,7 +51,7 @@ private data class BuildingPoint(
     val longitude: Double,
 )
 
-// Source-backed entrance points shared with the Gapwise web routing dataset.
+// Source-backed entrance points shared with Gapwise web's UTM routing dataset.
 private val BuildingPoints = listOf(
     BuildingPoint("MN", "Maanjiwe nendamowinan", 43.5513221, -79.6654141),
     BuildingPoint("DH", "Deerfield Hall", 43.5503162, -79.6659651),
@@ -61,85 +68,138 @@ private val BuildingPoints = listOf(
 ).associateBy { it.code }
 
 @Composable
-fun MapScreen(meetings: List<Meeting>) {
-    val utmDestinations = meetings
-        .filter { it.campus == Campus.UTM && it.locationType == LocationType.PHYSICAL }
-        .distinctBy { "${it.buildingCode}:${it.room}" }
-        .sortedBy { it.startTime }
-    val mappedDestinations = utmDestinations.filter { it.buildingCode != null && BuildingPoints.containsKey(it.buildingCode) }
-    val unmappedCount = utmDestinations.size - mappedDestinations.size
+fun MapScreen(
+    meetings: List<Meeting>,
+    darkTheme: Boolean,
+) {
+    val destinations = remember(meetings) {
+        meetings
+            .filter { it.campus == Campus.UTM && it.locationType == LocationType.PHYSICAL }
+            .filter { it.buildingCode != null && BuildingPoints.containsKey(it.buildingCode) }
+            .distinctBy { it.buildingCode }
+    }
+    var query by remember { mutableStateOf("") }
+    var selectedCode by remember { mutableStateOf<String?>(null) }
+    val results = remember(query) {
+        val normalized = query.trim().lowercase()
+        if (normalized.isBlank()) emptyList()
+        else BuildingPoints.values
+            .filter { it.code.lowercase().contains(normalized) || it.name.lowercase().contains(normalized) }
+            .take(6)
+    }
+    val selected = selectedCode?.let(BuildingPoints::get)
 
-    LazyColumn(
-        contentPadding = PaddingValues(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(12.dp)
+            .clip(RoundedCornerShape(16.dp)),
     ) {
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Text(
-                    text = "UTM CAMPUS MAP",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text("Explore Mississauga", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    text = "Pan, pinch, and tap your imported UTM class destinations. Timetable support remains U of T-wide.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        key(darkTheme, destinations.joinToString("|") { it.buildingCode.orEmpty() }, selectedCode) {
+            UtmMap(
+                destinations = destinations,
+                darkTheme = darkTheme,
+                focusedBuilding = selected,
+                onBuildingSelected = { selectedCode = it },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
-        item {
-            key(mappedDestinations.joinToString("|") { it.id }) {
-                UtmMap(
-                    destinations = mappedDestinations,
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp)
+                .widthIn(max = 360.dp),
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                placeholder = { Text("Search MN, Deerfield, Kaneff…") },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_lucide_search),
+                        contentDescription = null,
+                    )
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (query.isNotBlank()) {
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(430.dp)
-                        .padding(horizontal = 12.dp)
-                        .clip(RoundedCornerShape(18.dp)),
-                )
-            }
-        }
-
-        if (unmappedCount > 0) {
-            item {
-                Text(
-                    text = "$unmappedCount imported UTM location(s) do not have a source-backed native pin yet; they remain visible in Timetable.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        if (utmDestinations.isNotEmpty()) {
-            item {
-                Text(
-                    text = "UTM destinations in your timetable",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                )
-            }
-            items(utmDestinations, key = { it.id }) { meeting ->
-                OutlinedCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(15.dp),
+                        .padding(top = 6.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                    tonalElevation = 4.dp,
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(meeting.locationLabel, fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.padding(vertical = 5.dp)) {
+                        if (results.isEmpty()) {
+                            Text(
+                                "No mapped UTM building matches that search.",
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            results.forEach { building ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedCode = building.code
+                                            query = ""
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(7.dp),
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                    ) {
+                                        Text(
+                                            building.code,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                    Text(building.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (selected != null) {
+            val classAtBuilding = destinations.firstOrNull { it.buildingCode == selected.code }
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(12.dp)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                tonalElevation = 5.dp,
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "${selected.code} · UTM",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(selected.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    if (classAtBuilding != null) {
                         Text(
-                            text = meeting.courseCode,
+                            "${classAtBuilding.courseCode} · ${classAtBuilding.locationLabel}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 3.dp),
                         )
                     }
                 }
@@ -151,22 +211,24 @@ fun MapScreen(meetings: List<Meeting>) {
 @Composable
 private fun UtmMap(
     destinations: List<Meeting>,
-    modifier: Modifier = Modifier,
+    darkTheme: Boolean,
+    focusedBuilding: BuildingPoint?,
+    onBuildingSelected: (String) -> Unit,
+    modifier: Modifier,
 ) {
-    val context = LocalContext.current
-    val darkTheme = isSystemInDarkTheme()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val styleUrl = if (darkTheme) DARK_STYLE else LIGHT_STYLE
-
-    val mapView = remember(styleUrl, destinations) {
+    val mapView = remember(styleUrl, destinations, focusedBuilding) {
         MapLibre.getInstance(context)
         MapView(context).apply {
             onCreate(null)
             onStart()
             onResume()
             getMapAsync { map ->
+                val focus = focusedBuilding
                 map.cameraPosition = CameraPosition.Builder()
-                    .target(LatLng(UTM_LAT, UTM_LON))
-                    .zoom(15.7)
+                    .target(if (focus == null) LatLng(UTM_LAT, UTM_LON) else LatLng(focus.latitude, focus.longitude))
+                    .zoom(if (focus == null) 15.8 else 17.2)
                     .build()
                 map.setStyle(styleUrl) {
                     destinations.forEach { meeting ->
@@ -175,8 +237,20 @@ private fun UtmMap(
                             MarkerOptions()
                                 .position(LatLng(point.latitude, point.longitude))
                                 .title("${meeting.courseCode} · ${meeting.locationLabel}")
-                                .snippet(point.name),
+                                .snippet(point.code),
                         )
+                    }
+                    if (focus != null && destinations.none { it.buildingCode == focus.code }) {
+                        map.addMarker(
+                            MarkerOptions()
+                                .position(LatLng(focus.latitude, focus.longitude))
+                                .title("${focus.code} · ${focus.name}")
+                                .snippet(focus.code),
+                        )
+                    }
+                    map.setOnMarkerClickListener { marker ->
+                        marker.snippet?.takeIf(BuildingPoints::containsKey)?.let(onBuildingSelected)
+                        false
                     }
                 }
             }
@@ -191,8 +265,5 @@ private fun UtmMap(
         }
     }
 
-    AndroidView(
-        factory = { mapView },
-        modifier = modifier,
-    )
+    AndroidView(factory = { mapView }, modifier = modifier)
 }
