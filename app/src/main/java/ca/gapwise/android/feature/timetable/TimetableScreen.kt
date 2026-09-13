@@ -1,25 +1,20 @@
 package ca.gapwise.android.feature.timetable
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +35,7 @@ import ca.gapwise.android.core.designsystem.WebControlShape
 import ca.gapwise.android.core.designsystem.WebEyebrow
 import ca.gapwise.android.core.designsystem.WebSegmentButton
 import ca.gapwise.android.core.designsystem.WebSurface
+import ca.gapwise.android.core.model.ActivityType
 import ca.gapwise.android.core.model.Meeting
 import ca.gapwise.android.core.model.Term
 import ca.gapwise.android.core.model.formatTime
@@ -53,11 +50,21 @@ private val BaseDays = listOf(
     DayOfWeek.FRIDAY,
 )
 
+private data class TimetableGap(
+    val previous: Meeting,
+    val next: Meeting,
+) {
+    val startTime: Int get() = previous.endTime
+    val endTime: Int get() = next.startTime
+    val durationMinutes: Int get() = endTime - startTime
+}
+
 @Composable
 fun TimetableScreen(
     meetings: List<Meeting>,
     importStatus: String?,
     onImport: () -> Unit,
+    onOpenGapPlan: () -> Unit = {},
 ) {
     if (meetings.isEmpty()) {
         EmptyTimetable(importStatus = importStatus, onImport = onImport)
@@ -84,6 +91,14 @@ fun TimetableScreen(
     val dayMeetings = termMeetings.filter { it.weekday == selectedDay }.sortedBy { it.startTime }
     val dayClasses = dayMeetings.filterNot { it.isAssessmentWindow }
     val reservedCount = dayMeetings.size - dayClasses.size
+    val gapAfterMeeting = remember(dayClasses) {
+        dayClasses
+            .zipWithNext()
+            .mapNotNull { (previous, next) ->
+                if (next.startTime > previous.endTime) TimetableGap(previous, next) else null
+            }
+            .associateBy { it.previous.id }
+    }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 20.dp),
@@ -207,6 +222,9 @@ fun TimetableScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         dayMeetings.forEach { meeting ->
                             MeetingCard(meeting)
+                            gapAfterMeeting[meeting.id]?.let { gap ->
+                                GapCard(gap = gap, onClick = onOpenGapPlan)
+                            }
                         }
                     }
                 }
@@ -217,122 +235,166 @@ fun TimetableScreen(
 
 @Composable
 private fun MeetingCard(meeting: Meeting) {
-    val accent = MaterialTheme.colorScheme.tertiary
+    val accent = activityAccent(meeting)
     val location = locationPresentation(meeting)
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         shadowElevation = 0.dp,
     ) {
-        Row {
-            Box(
-                modifier = Modifier
-                    .width(2.dp)
-                    .fillMaxHeight()
-                    .background(accent),
-            )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(13.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = meeting.courseCode,
+                    color = accent,
+                    fontSize = 15.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+                Surface(
+                    modifier = Modifier.padding(start = 8.dp),
+                    shape = RoundedCornerShape(5.dp),
+                    color = accent.copy(alpha = 0.11f),
+                    border = BorderStroke(1.dp, accent.copy(alpha = 0.32f)),
+                ) {
                     Text(
-                        text = meeting.courseCode,
-                        fontSize = 15.sp,
-                        lineHeight = 18.sp,
+                        text = meeting.activityLabel,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        color = accent,
+                        fontSize = 9.5.sp,
+                        lineHeight = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                    )
-                    Surface(
-                        modifier = Modifier.padding(start = 8.dp),
-                        shape = RoundedCornerShape(5.dp),
-                        color = accent.copy(alpha = 0.11f),
-                        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
-                    ) {
-                        Text(
-                            text = meeting.activityLabel,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            color = accent,
-                            fontSize = 9.5.sp,
-                            lineHeight = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Outlined.ChevronRight,
-                        contentDescription = null,
-                        modifier = Modifier.padding(start = 6.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Icon(
+                    imageVector = Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    modifier = Modifier.padding(start = 6.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
-                Row(
-                    modifier = Modifier.padding(top = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.AccessTime,
-                        contentDescription = null,
-                        tint = accent,
-                    )
+            Row(
+                modifier = Modifier.padding(top = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.AccessTime,
+                    contentDescription = null,
+                    tint = accent,
+                )
+                Text(
+                    text = "${formatTime(meeting.startTime)} – ${formatTime(meeting.endTime)}",
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+
+            Row(
+                modifier = Modifier.padding(top = 6.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = if (meeting.isAssessmentWindow) Icons.Outlined.AccessTime else Icons.Outlined.Place,
+                    contentDescription = null,
+                    tint = accent,
+                )
+                Column {
                     Text(
-                        text = "${formatTime(meeting.startTime)} – ${formatTime(meeting.endTime)}",
+                        text = location.first,
                         fontSize = 12.sp,
                         lineHeight = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
-                }
-
-                Row(
-                    modifier = Modifier.padding(top = 6.dp),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Place,
-                        contentDescription = null,
-                        tint = accent,
-                    )
-                    Column {
+                    location.second?.let { floor ->
                         Text(
-                            text = location.first,
-                            fontSize = 12.sp,
-                            lineHeight = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            text = floor,
+                            modifier = Modifier.padding(top = 2.dp),
+                            color = if (meeting.isAssessmentWindow) accent.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            fontWeight = FontWeight.Medium,
                         )
-                        location.second?.let { floor ->
-                            Text(
-                                text = floor,
-                                modifier = Modifier.padding(top = 2.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                                lineHeight = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
                     }
                 }
+            }
 
-                if (meeting.courseName.isNotBlank()) {
-                    Text(
-                        text = meeting.courseName,
-                        modifier = Modifier.padding(top = 9.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
-                        maxLines = 2,
-                    )
-                }
+            if (meeting.courseName.isNotBlank()) {
+                Text(
+                    text = meeting.courseName,
+                    modifier = Modifier.padding(top = 9.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    maxLines = 2,
+                )
             }
         }
     }
+}
+
+@Composable
+private fun GapCard(gap: TimetableGap, onClick: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.tertiary
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = accent.copy(alpha = 0.045f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+        shadowElevation = 0.dp,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.AutoAwesome,
+                    contentDescription = null,
+                    tint = accent,
+                )
+                Text(
+                    text = "${compactGapDuration(gap.durationMinutes)} gap",
+                    modifier = Modifier.padding(start = 7.dp),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "View gap plan",
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp),
+                    color = accent,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                text = "${formatTime(gap.startTime)} – ${formatTime(gap.endTime)}",
+                modifier = Modifier.padding(top = 5.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.5.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun activityAccent(meeting: Meeting): Color = when {
+    meeting.isAssessmentWindow -> Color(0xFFF2C94C)
+    meeting.activityType == ActivityType.PRA -> Color(0xFFA78BFA)
+    meeting.activityType == ActivityType.TUT -> Color(0xFF2EC4B6)
+    meeting.activityType == ActivityType.LEC -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 private fun locationPresentation(meeting: Meeting): Pair<String, String?> {
@@ -406,6 +468,12 @@ private fun EmptyTimetable(importStatus: String?, onImport: () -> Unit) {
             }
         }
     }
+}
+
+private fun compactGapDuration(minutes: Int): String = when {
+    minutes < 60 -> "${minutes}m"
+    minutes % 60 == 0 -> "${minutes / 60}h"
+    else -> "${minutes / 60}h ${minutes % 60}m"
 }
 
 private fun DayOfWeek.displayName(): String = name.lowercase().replaceFirstChar(Char::titlecase)
