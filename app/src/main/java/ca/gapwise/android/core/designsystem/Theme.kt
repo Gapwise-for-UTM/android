@@ -6,10 +6,14 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// sRGB equivalents of the canonical Gapwise web OKLCH tokens in src/brand-blue.css.
+// Exact sRGB equivalents of the canonical Gapwise web OKLCH tokens in src/brand-blue.css.
+// Keep these values in lock-step with the web app: the native shell should be visually
+// indistinguishable from the 400px mobile web surface, not merely "Android themed".
 private val LightColors = lightColorScheme(
     primary = Color(0xFF007AD4),
     onPrimary = Color(0xFFFCFDFD),
+    tertiary = Color(0xFF007DD3), // --accent
+    onTertiary = Color(0xFFFCFDFD),
     background = Color(0xFFF9FAFB),
     onBackground = Color(0xFF101214),
     surface = Color(0xFFFEFEFF),
@@ -24,8 +28,10 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF33A3F1),
+    primary = Color(0xFF009AF1),
     onPrimary = Color(0xFFFCFDFD),
+    tertiary = Color(0xFF33A3F1), // --accent
+    onTertiary = Color(0xFFFCFDFD),
     background = Color(0xFF040405),
     onBackground = Color(0xFFE9EBEE),
     surface = Color(0xFF07080A),

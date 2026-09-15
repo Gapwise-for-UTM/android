@@ -1,0 +1,46 @@
+name: Android parity build
+
+on:
+  push:
+    branches: [web-mobile-ui-parity]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: current
+      - name: Compile Android app
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:compileDebugKotlin --stacktrace 2>&1 | tee build.log
+      - name: Report build diagnostics
+        if: ${{ failure() && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '<!-- parity-build-diagnostics -->'
+            echo 'Android parity compile failed. Kotlin/Gradle diagnostics:'
+            echo
+            echo '```text'
+            grep -E '(^e:| error:|Unresolved reference|Cannot infer|No parameter with name|Type mismatch|Argument type mismatch|Compilation error)' build.log | tail -n 220 || true
+            echo '```'
+          } > diagnostics.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostics.md
