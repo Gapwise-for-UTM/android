@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -530,6 +531,7 @@ private fun MeetingMapCard(
 private fun BuildingMapCard(building: CampusBuildingGeometry, onClose: () -> Unit, modifier: Modifier) {
     val mappedEntrances = building.entrances.count { it.kind == "entrance" }
     val approaches = building.entrances.count { it.kind == "approach" }
+    val uriHandler = LocalUriHandler.current
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(9.dp),
@@ -568,6 +570,13 @@ private fun BuildingMapCard(building: CampusBuildingGeometry, onClose: () -> Uni
                 fontSize = 10.5.sp,
                 lineHeight = 16.sp,
             )
+            OutlinedButton(
+                onClick = { uriHandler.openUri("https://data.gapwise.ca/contribute?building=${building.code}") },
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).heightIn(min = 40.dp),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text("Contribute entrance data", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
