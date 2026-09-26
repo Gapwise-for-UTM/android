@@ -27,7 +27,7 @@
 
 Gapwise for Android is the native Android client for **[Gapwise](https://gapwise.ca)**, a free and open-source multi-university timetable and campus-intelligence platform.
 
-While the Gapwise web platform supports 7 universities across Canada (U of T, Carleton, TMU, Queen's, Laurier, York, and McMaster), the current native Android client implementation focuses on the **University of Toronto** (UTM, UTSG, UTSC, and mixed-campus schedules), with broader multi-university native client expansion planned.
+While the Gapwise web platform supports 11 universities across Canada (U of T, Carleton, TMU, Queen's, Laurier, York, McMaster, Western, Guelph, uOttawa, and Brock), the current native Android client implementation focuses on the **University of Toronto** (Mississauga, St. George, Scarborough, and mixed-campus schedules), with broader multi-university native client expansion planned.
 
 This is a real native Android application rather than a WebView wrapper. Android owns navigation, storage, lifecycle behavior, platform authentication hand-off, theming, and map rendering while the wider Gapwise ecosystem remains the source of truth for shared product semantics.
 
